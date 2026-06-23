@@ -1,92 +1,75 @@
-const db = require("../Config/db");
+const { Student, User, Tutor, EnrolledClass } = require("../Models");
 const jwt = require("jsonwebtoken");
 
 //get all student data
-exports.getAllStudents = (req, res) => {
-    const query = "SELECT * FROM student";
-    db.query(query, (error, results) => {
-      if (error) {
-        console.error("Error fetching students:", error);
-        res.status(500).json({ error: "Error fetching students" });
-        return;
-      }
-      res.json(results);
-    });
-  };
+exports.getAllStudents = async (req, res) => {
+  try {
+    const students = await Student.findAll();
+    res.json(students);
+  } catch (error) {
+    console.error("Error fetching students:", error);
+    res.status(500).json({ error: "Error fetching students" });
+  }
+};
 
-  //delete student data
-  exports.deleteStudent = (req, res) => {
-    const userId = req.params.userId;
+//delete student data
+exports.deleteStudent = async (req, res) => {
+  const userId = req.params.userId;
 
-    const studentQuery = "DELETE FROM student WHERE UserID = ?";
-    const userQuery = "DELETE FROM user WHERE UserID = ?";
-    db.query(studentQuery, [userId], (error, studentResult) => {
-        if (error) {
-            console.error("Error deleting student:", error);
-            return res.status(500).json({ error: "Error deleting student", error });
-        }
-        db.query(userQuery, [userId], (error, userResult) => {
-            if (error) {
-                console.error("Error deleting user:", error);
-                return res.status(500).json({ error: "Error deleting user" });
-            }
-            res.json({ message: "Student and user data deleted successfully." });
-        });
-    });
+  try {
+    await Student.destroy({ where: { UserID: userId } });
+    await User.destroy({ where: { UserID: userId } });
+    res.json({ message: "Student and user data deleted successfully." });
+  } catch (error) {
+    console.error("Error deleting student:", error);
+    res.status(500).json({ error: "Error deleting student" });
+  }
 };
 
 //get single student data
-
 exports.getStudent = async (req, res) => {
   try {
     const studentId = req.params.studentId;
-    // Query to fetch student by studentId
-    const query = "SELECT FirstName FROM student WHERE StudentID = ?";
-    // Execute the query
-    db.query(query, [studentId], (error, results) => {
-      if (error) {
-        console.error("Error fetching student:", error);
-        res.status(500).json({ success: false, message: "Server error" });
-        return;
-      }
-      // Check if student exists
-      if (results.length > 0) {
-        res.json({ success: true, FirstName: results[0].FirstName });
-      } else {
-        res.status(404).json({ success: false, message: "Student not found" });
-      }
-    });
+    const student = await Student.findByPk(studentId, { attributes: ['FirstName'] });
+
+    if (student) {
+      res.json({ success: true, FirstName: student.FirstName });
+    } else {
+      res.status(404).json({ success: false, message: "Student not found" });
+    }
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-
-
 //update student data
-
-exports.updateStudent = (req, res) => {
+exports.updateStudent = async (req, res) => {
   const selectedUserId = req.params.selectedUserId;
-  console.log(selectedUserId);
-  console.log(req.body);
-  const { firstName, lastName, gender, birthday, address, telephoneNumber, email } = req.body; // Updated parameter names here
-  const query = "UPDATE student SET FirstName = ?, LastName = ?, Gender = ?, Birthday = ?, Address = ?, TelNo = ?, Email = ? WHERE UserID = ?";
-  db.query(query, [ firstName, lastName, gender, birthday, address, telephoneNumber, email, selectedUserId ], (error, results) => {
-    if (error) {
-      console.error("Error updating student:", error);
-      res.status(500).json({ success: false, message: "Server error" });
-      return;
-    }
+  const { firstName, lastName, gender, birthday, address, telephoneNumber, email } = req.body;
+
+  try {
+    await Student.update(
+      {
+        FirstName: firstName,
+        LastName: lastName,
+        Gender: gender,
+        Birthday: birthday,
+        Address: address,
+        TelNo: telephoneNumber,
+        Email: email
+      },
+      { where: { UserID: selectedUserId } }
+    );
     res.json({ success: true, message: "Student updated successfully" });
-  });
-}
-
-
+  } catch (error) {
+    console.error("Error updating student:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 
 //get tutor student data
-
-exports.getTutorStudents = (req, res) => {
+exports.getTutorStudents = async (req, res) => {
   let token = req.headers['authorization'];
 
   if (!token) {
@@ -97,48 +80,38 @@ exports.getTutorStudents = (req, res) => {
     token = token.slice(7, token.length); // Remove Bearer prefix
   }
 
-  jwt.verify(token, 'secret_key', (err, decoded) => {
+  jwt.verify(token, 'secret_key', async (err, decoded) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to authenticate token' });
     }
 
     const userID = decoded.UserID;
 
-    // Query to get the TutorID from the UserID
-    const getTutorIDQuery = 'SELECT TutorID FROM tutor WHERE UserID = ?';
-    
-    db.query(getTutorIDQuery, [userID], (err, tutorResults) => {
-      if (err) {
-        console.error("Error fetching TutorID:", err);
-        return res.status(500).json({ error: 'Error fetching TutorID' });
+    try {
+      const tutor = await Tutor.findOne({ where: { UserID: userID } });
+
+      if (!tutor) {
+        return res.status(404).json({ error: 'Tutor not found' });
       }
 
-      if (tutorResults.length === 0) {
-        return res.status(404).json({ error: 'TutorID not found' });
-      }
+      const tutorID = tutor.TutorID;
 
-      const tutorID = tutorResults[0].TutorID;
-
-      // Query to get students related to the TutorID
-      const query = `
-        SELECT FirstName, LastName, Gender, Grade, StudentID 
-        FROM student 
-        WHERE UserID IN (
-          SELECT UserID 
-          FROM enrolledclasses 
-          WHERE TutorID = ?
-        )`;
-
-      db.query(query, [tutorID], (error, results) => {
-        if (error) {
-          console.error("Error fetching students:", error);
-          return res.status(500).json({ error: 'Error fetching students' });
-        }
-        res.json(results);
+      const enrolledClasses = await EnrolledClass.findAll({
+        where: { TutorID: tutorID },
+        attributes: ['UserID']
       });
-    });
+
+      const userIDs = enrolledClasses.map(ec => ec.UserID);
+
+      const students = await Student.findAll({
+        where: { UserID: userIDs },
+        attributes: ['FirstName', 'LastName', 'Gender', 'Grade', 'StudentID']
+      });
+
+      res.json(students);
+    } catch (error) {
+      console.error("Error fetching students:", error);
+      res.status(500).json({ error: 'Error fetching students' });
+    }
   });
 };
-
-
-

@@ -1,9 +1,7 @@
-const db = require("../Config/db");
-
+const { db, User, Student, Parent, Tutor } = require("../Models");
 
 //register student
-
-exports.registerStudent = (req, res) => {
+exports.registerStudent = async (req, res) => {
   const {
     firstName,
     lastName,
@@ -17,55 +15,47 @@ exports.registerStudent = (req, res) => {
     password,
   } = req.body;
 
-  const userQuery = "INSERT INTO user (username, password, userrole) VALUES (?, ?, 'Student');";
-  const studentQuery = "INSERT INTO student (FirstName, LastName, Gender, Grade, Birthday, Address, TelNo, Email, UserID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);";
+  const transaction = await db.transaction();
 
-  db.query(userQuery, [username, password], (err, results) => {
-    if (err) {
-      console.error("Error inserting user:", err);
-      res.status(500).send("Error inserting user data");
-      return;
-    }
+  try {
+    const user = await User.create(
+      { username, password, userrole: 'Student' },
+      { transaction }
+    );
 
-    db.query("SELECT LAST_INSERT_ID() AS UserID;", (err, result) => {
-      if (err) {
-        console.error("Error retrieving UserID:", err);
-        res.status(500).send("Error retrieving UserID");
-        return;
-      }
-      const userID = result[0].UserID;
+    const student = await Student.create(
+      {
+        FirstName: firstName,
+        LastName: lastName,
+        Gender: gender,
+        Grade: grade,
+        Birthday: birthday,
+        Address: address,
+        TelNo: telephoneNumber,
+        Email: email,
+        UserID: user.UserID,
+      },
+      { transaction }
+    );
 
-      db.query(
-        studentQuery,
-        [firstName, lastName, gender, grade, birthday, address, telephoneNumber, email, userID],
-        (err, result) => {
-          if (err) {
-            console.error("Error inserting student data:", err);
-            res.status(500).send("Error inserting student data");
-            return;
-          }
+    await transaction.commit();
 
-          db.query("SELECT LAST_INSERT_ID() AS StudentID;", (err, result) => {
-            if (err) {
-              console.error("Error retrieving StudentID:", err);
-              res.status(500).send("Error retrieving StudentID");
-              return;
-            }
-
-            const studentID = result[0].StudentID;
-            const fullName = `${firstName} ${lastName}`;
-            res.status(200).send({ message: "Registration successful", StudentID: studentID, Name: fullName, Address: address });
-          });
-        }
-      );
+    const fullName = `${firstName} ${lastName}`;
+    res.status(200).send({
+      message: "Registration successful",
+      StudentID: student.StudentID,
+      Name: fullName,
+      Address: address,
     });
-  });
+  } catch (err) {
+    await transaction.rollback();
+    console.error("Error inserting student data:", err);
+    res.status(500).send("Error inserting student data");
+  }
 };
 
-
-
 //register parent
-exports.registerParent = (req, res) => {
+exports.registerParent = async (req, res) => {
   const {
     firstName,
     lastName,
@@ -79,75 +69,52 @@ exports.registerParent = (req, res) => {
     password,
   } = req.body;
 
-  const parentQuery =
-    "INSERT INTO parent (FirstName, LastName, TelNo, Email, NICNo, StudentNo, Gender, Address, UserID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-  const userQuery =
-    "INSERT INTO user (username, password, userrole) VALUES (?, ?, 'Parent')";
-  const checkStudentQuery =
-    "SELECT COUNT(*) AS count FROM student WHERE StudentID = ?";
+  try {
+    // Check if the student number exists
+    const studentExists = await Student.findOne({ where: { StudentID: studentNumber } });
 
-  // Check if the student number exists
-  db.query(checkStudentQuery, [studentNumber], (err, result) => {
-    if (err) {
-      console.error("Error checking student number:", err);
-      res.status(500).send({ message: "Error checking student number" });
-      return;
+    if (!studentExists) {
+      return res.status(400).send({ message: "This student does not exist" });
     }
 
-    if (result[0].count === 0) {
-      res.status(400).send({ message: "This student does not exist" });
-      return;
+    const transaction = await db.transaction();
+
+    try {
+      const user = await User.create(
+        { username, password, userrole: 'Parent' },
+        { transaction }
+      );
+
+      await Parent.create(
+        {
+          FirstName: firstName,
+          LastName: lastName,
+          TelNo: telephoneNumber,
+          Email: email,
+          NICNo: nicNumber,
+          StudentNo: studentNumber,
+          Gender: gender,
+          Address: address,
+          UserID: user.UserID,
+        },
+        { transaction }
+      );
+
+      await transaction.commit();
+      res.status(200).send({ message: "Registration successful" });
+    } catch (err) {
+      await transaction.rollback();
+      console.error("Error inserting parent data:", err);
+      res.status(500).send({ message: "Error inserting parent data" });
     }
-
-    // Insert user data
-    db.query(userQuery, [username, password], (err, result) => {
-      if (err) {
-        console.error("Error inserting user:", err);
-        res.status(500).send({ message: "Error inserting user data" });
-        return;
-      }
-
-      // Get the last inserted UserID
-      db.query("SELECT LAST_INSERT_ID() AS UserID;", (err, result) => {
-        if (err) {
-          console.error("Error getting last insert ID:", err);
-          res.status(500).send({ message: "Error getting last insert ID" });
-          return;
-        }
-        const userID = result[0].UserID;
-
-        // Insert parent data
-        db.query(
-          parentQuery,
-          [
-            firstName,
-            lastName,
-            telephoneNumber,
-            email,
-            nicNumber,
-            studentNumber,
-            gender,
-            address,
-            userID,
-          ],
-          (err, result) => {
-            if (err) {
-              console.error("Error inserting parent data:", err);
-              res.status(500).send({ message: "Error inserting parent data" });
-              return;
-            }
-            res.status(200).send({ message: "Registration successful" });
-          }
-        );
-      });
-    });
-  });
+  } catch (err) {
+    console.error("Error checking student number:", err);
+    res.status(500).send({ message: "Error checking student number" });
+  }
 };
 
-
-
 //register tutor
-exports.registerTutor = (req, res) => {
+exports.registerTutor = async (req, res) => {
   const {
     firstName,
     lastName,
@@ -161,51 +128,34 @@ exports.registerTutor = (req, res) => {
     password,
   } = req.body;
 
-  const tutorQuery =
-    "INSERT INTO tutor (FirstName, LastName, Gender, Address, TelNo, Email, NICNo, Subject, UserID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-  const userQuery =
-    "INSERT INTO user (username, password, userrole) VALUES (?, ?, 'Tutor')";
+  const transaction = await db.transaction();
 
-  db.query(userQuery, [username, password], (err, result) => {
-    if (err) {
-      console.error(
-        "Error ***********************",
-        err
-      );
-      console.error("Error inserting user:", err);
-      return;
-    }
+  try {
+    const user = await User.create(
+      { username, password, userrole: 'Tutor' },
+      { transaction }
+    );
 
-    db.query("SELECT LAST_INSERT_ID() AS UserID;", (err, result) => {
-      if (err) {
-        console.error(err);
-        res.status(500).send("Error inserting user data");
-        return;
-      }
-      const userID = result[0].UserID;
+    await Tutor.create(
+      {
+        FirstName: firstName,
+        LastName: lastName,
+        Gender: gender,
+        Address: address,
+        TelNo: telephoneNumber,
+        Email: email,
+        NICNo: nicNumber,
+        Subject: subject,
+        UserID: user.UserID,
+      },
+      { transaction }
+    );
 
-      db.query(
-        tutorQuery,
-        [
-          firstName,
-          lastName,
-          gender,
-          address,
-          telephoneNumber,
-          email,
-          nicNumber,
-          subject,
-          userID,
-        ],
-        (err, result) => {
-          if (err) {
-            console.error(err);
-            res.status(500).send("Error inserting tutor data");
-            return;
-          }
-          res.status(200).send("Registration successful");
-        }
-      );
-    });
-  });
+    await transaction.commit();
+    res.status(200).send("Registration successful");
+  } catch (err) {
+    await transaction.rollback();
+    console.error("Error inserting tutor data:", err);
+    res.status(500).send("Error inserting tutor data");
+  }
 };

@@ -20,6 +20,9 @@ const NotificationRoutes = require('./Routes/NotificationRoutes');
 const AssignRoutes = require('./Routes/AssignRoutes');
 const LectureMaterialRoutes = require('./Routes/LectureMaterialRoutes');
 
+// Import models to register associations and sync DB
+const { db } = require('./Models');
+
 const app = express();
 
 app.use(cors());
@@ -44,6 +47,13 @@ app.use('/api/notification', NotificationRoutes);
 app.use('/api/assign', AssignRoutes);
 app.use('/api/lectureMaterial', LectureMaterialRoutes);
 
-app.listen(8081, () => {
-    console.log('Server started on port 8081'); 
+app.listen(8081, async () => {
+    console.log('Server started on port 8081');
+    try {
+        await db.sync({ force: false });
+        console.log('All database tables synced successfully');
+    } catch (err) {
+        console.error('Error syncing database tables:', err.message);
+    }
 });
+
