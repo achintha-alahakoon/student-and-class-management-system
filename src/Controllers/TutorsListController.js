@@ -1,35 +1,27 @@
-const db = require("../Config/db");
+const { Tutor, User } = require("../Models");
 
-exports.getAllTutors = (req, res) => {
-    const query = "SELECT FirstName, LastName, Gender, Subject, TutorID, UserID FROM tutor";
-    db.query(query, (error, results) => {
-      if (error) {
-        console.error("Error fetching tutors:", error);
-        res.status(500).json({ error: "Error fetching tutors" });
-        return;
-      }
-      res.json(results);
+exports.getAllTutors = async (req, res) => {
+  try {
+    const tutors = await Tutor.findAll({
+      attributes: ['FirstName', 'LastName', 'Gender', 'Subject', 'TutorID', 'UserID']
     });
-  };
-
+    res.json(tutors);
+  } catch (error) {
+    console.error("Error fetching tutors:", error);
+    res.status(500).json({ error: "Error fetching tutors" });
+  }
+};
 
 //delete tutor data
-exports.deleteTutor = (req, res) => {
-    const userId = req.params.userId;
-    
-    const tutorQuery = "DELETE FROM tutor WHERE UserID = ?";
-    const userQuery = "DELETE FROM user WHERE UserID = ?";
-    db.query(tutorQuery, [userId], (error, tutorResult) => {
-        if (error) {
-            console.error("Error deleting tutor:", error);
-            return res.status(500).json({ error: "Error deleting tutor", error });
-        }
-        db.query(userQuery, [userId], (error, userResult) => {
-            if (error) {
-                console.error("Error deleting user:", error);
-                return res.status(500).json({ error: "Error deleting user" });
-            }
-            res.json({ message: "Tutor and user data deleted successfully." });
-        });
-    });
+exports.deleteTutor = async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    await Tutor.destroy({ where: { UserID: userId } });
+    await User.destroy({ where: { UserID: userId } });
+    res.json({ message: "Tutor and user data deleted successfully." });
+  } catch (error) {
+    console.error("Error deleting tutor or user:", error);
+    res.status(500).json({ error: "Error deleting tutor or user" });
+  }
 };

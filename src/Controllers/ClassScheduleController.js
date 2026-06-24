@@ -1,310 +1,210 @@
-const db = require("../Config/db");
+const { Class, ClassSchedule, Tutor, EnrolledClass, Parent, ParentChild, Student } = require("../Models");
 const jwt = require("jsonwebtoken");
 
 // Add class and class schedule
+exports.addClass = async (req, res) => {
+  const { startDate, grade, repeatOn, hallNumber, startTime, endTime, tutor, subject } = req.body;
 
-exports.addClass = (req, res) => {
-  const {
-    startDate,
-    grade,
-    repeatOn,
-    hallNumber,
-    startTime,
-    endTime,
-    tutor,
-    subject,
-  } = req.body;
+  try {
+    const classObj = await Class.findOne({ where: { Grade: grade, Tutor: tutor, Subject: subject } });
 
-  // Check if the class with the given Subject, Grade, and Tutor already exists
-  const checkClassQuery =
-    "SELECT ClassID FROM class WHERE Grade = ? AND Tutor = ? AND Subject = ?";
-  db.query(checkClassQuery, [grade, tutor, subject], (error, classResults) => {
-    if (error) {
-      console.error("Error checking class:", error);
-      return res.status(500).json({ error: "Error checking class" });
+    if (!classObj) {
+      return res.status(400).json({ error: "Class with the specified Grade, Tutor, and Subject does not exist" });
     }
 
-    if (classResults.length === 0) {
-      // If no such class exists, return an error
-      return res
-        .status(400)
-        .json({
-          error:
-            "Class with the specified Grade, Tutor, and Subject does not exist",
-        });
-    }
+    await ClassSchedule.create({
+      ScheduleDate: startDate,
+      Start_Time: startTime,
+      Repeat_On: repeatOn,
+      Hall_Num: hallNumber,
+      End_Time: endTime,
+      ClassID: classObj.ClassID
+    });
 
-    // Extract the existing ClassID
-    const classId = classResults[0].ClassID;
-
-    // Insert class schedule details into the `classschedule` table
-    const classScheduleQuery =
-      "INSERT INTO classschedule (ScheduleDate, Start_Time, Repeat_On, Hall_Num, End_Time, ClassID) VALUES (?, ?, ?, ?, ?, ?)";
-    db.query(
-      classScheduleQuery,
-      [startDate, startTime, repeatOn, hallNumber, endTime, classId],
-      (error, scheduleResults) => {
-        if (error) {
-          console.error("Error adding class schedule:", error);
-          return res.status(500).json({ error: "Error adding class schedule" });
-        }
-
-        res.status(200).json({ message: "Class schedule added successfully" });
-      }
-    );
-  });
+    res.status(200).json({ message: "Class schedule added successfully" });
+  } catch (error) {
+    console.error("Error adding class schedule:", error);
+    res.status(500).json({ error: "Error adding class schedule" });
+  }
 };
 
 // Get all scheduled classes
+exports.getSchedule = async (req, res) => {
+  try {
+    const schedules = await ClassSchedule.findAll({
+      include: [{
+        model: Class,
+        attributes: ['Subject', 'Grade', 'Tutor']
+      }]
+    });
 
-exports.getSchedule = (req, res) => {
-  const getScheduledClassesQuery = `
-      SELECT class.Subject, class.Grade, class.Tutor, classschedule.ScheduleID, classschedule.Repeat_On, classschedule.Hall_Num, classschedule.Start_Time, classschedule.End_Time
-      FROM class
-      INNER JOIN classschedule ON class.ClassID = classschedule.ClassID
-    `;
+    const results = schedules.map(schedule => ({
+      Subject: schedule.class.Subject,
+      Grade: schedule.class.Grade,
+      Tutor: schedule.class.Tutor,
+      ScheduleID: schedule.ScheduleID,
+      Repeat_On: schedule.Repeat_On,
+      Hall_Num: schedule.Hall_Num,
+      Start_Time: schedule.Start_Time,
+      End_Time: schedule.End_Time
+    }));
 
-  db.query(getScheduledClassesQuery, (error, results) => {
-    if (error) {
-      console.error("Error fetching scheduled classes:", error);
-      res.status(500).json({ error: "Error fetching scheduled classes" });
-      return;
-    }
     res.json(results);
-  });
+  } catch (error) {
+    console.error("Error fetching scheduled classes:", error);
+    res.status(500).json({ error: "Error fetching scheduled classes" });
+  }
 };
 
 //Delete class schedule
-
-exports.deleteScheduleClass = (req, res) => {
+exports.deleteScheduleClass = async (req, res) => {
   const { ScheduleID } = req.params;
 
-  const deleteClassQuery = "DELETE FROM classschedule WHERE ScheduleID = ?";
-  db.query(deleteClassQuery, [ScheduleID], (error, results) => {
-    if (error) {
-      console.error("Error deleting class schedule:", error);
-      return res.status(500).json({ error: "Error deleting class schedule" });
-    }
+  try {
+    await ClassSchedule.destroy({ where: { ScheduleID } });
     res.json({ message: "Class schedule deleted successfully" });
-  });
+  } catch (error) {
+    console.error("Error deleting class schedule:", error);
+    res.status(500).json({ error: "Error deleting class schedule" });
+  }
 };
 
 // get student schedule
-exports.getStudentSchedule = (req, res) => {
+exports.getStudentSchedule = async (req, res) => {
   let token = req.headers["authorization"];
 
-  if (!token) {
-    return res.status(403).json({ error: "No token provided" });
-  }
+  if (!token) return res.status(403).json({ error: "No token provided" });
+  if (token.startsWith("Bearer ")) token = token.slice(7, token.length);
 
-  if (token.startsWith("Bearer ")) {
-    token = token.slice(7, token.length); // Remove Bearer prefix
-  }
-
-  jwt.verify(token, "secret_key", (err, decoded) => {
-    if (err) {
-      return res.status(500).json({ error: "Failed to authenticate token" });
-    }
+  jwt.verify(token, "secret_key", async (err, decoded) => {
+    if (err) return res.status(500).json({ error: "Failed to authenticate token" });
 
     const userID = decoded.UserID;
 
-    // Query to get ClassID from the enrolledclasses table using UserID
-    const getClassIDQuery =
-      "SELECT ClassID FROM enrolledclasses WHERE UserID = ?";
+    try {
+      const enrolledClasses = await EnrolledClass.findAll({ where: { UserID: userID } });
+      if (enrolledClasses.length === 0) return res.status(404).json({ error: "No classes found for this user" });
 
-    db.query(getClassIDQuery, [userID], (err, classResults) => {
-      if (err) {
-        console.error("Error fetching ClassID:", err);
-        return res.status(500).json({ error: "Error fetching ClassID" });
-      }
+      const classIDs = enrolledClasses.map(ec => ec.ClassID);
 
-      if (classResults.length === 0) {
-        return res
-          .status(404)
-          .json({ error: "No classes found for this user" });
-      }
-
-      const classIDs = classResults.map((result) => result.ClassID);
-
-      // Query to get scheduled class details from classschedule using ClassID
-      const getStudentScheduleQuery = `
-          SELECT class.Subject, class.Grade, class.Tutor, classschedule.ScheduleID, classschedule.Repeat_On, classschedule.Hall_Num, classschedule.Start_Time, classschedule.End_Time
-          FROM class
-          INNER JOIN classschedule ON class.ClassID = classschedule.ClassID
-          WHERE class.ClassID IN (?)
-        `;
-
-      db.query(getStudentScheduleQuery, [classIDs], (error, results) => {
-        if (error) {
-          console.error("Error fetching student schedule:", error);
-          return res
-            .status(500)
-            .json({ error: "Error fetching student schedule" });
-        }
-        res.json(results);
+      const schedules = await ClassSchedule.findAll({
+        where: { ClassID: classIDs },
+        include: [{ model: Class, attributes: ['Subject', 'Grade', 'Tutor'] }]
       });
-    });
+
+      const results = schedules.map(schedule => ({
+        Subject: schedule.class.Subject,
+        Grade: schedule.class.Grade,
+        Tutor: schedule.class.Tutor,
+        ScheduleID: schedule.ScheduleID,
+        Repeat_On: schedule.Repeat_On,
+        Hall_Num: schedule.Hall_Num,
+        Start_Time: schedule.Start_Time,
+        End_Time: schedule.End_Time
+      }));
+
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching student schedule:", error);
+      res.status(500).json({ error: "Error fetching student schedule" });
+    }
   });
 };
 
 // Get tutor scheduled classes
-exports.getTutorScheduledClasses = (req, res) => {
+exports.getTutorScheduledClasses = async (req, res) => {
   let token = req.headers["authorization"];
 
-  if (!token) {
-    return res.status(403).json({ error: "No token provided" });
-  }
+  if (!token) return res.status(403).json({ error: "No token provided" });
+  if (token.startsWith("Bearer ")) token = token.slice(7, token.length);
 
-  if (token.startsWith("Bearer ")) {
-    token = token.slice(7, token.length); // Remove Bearer prefix
-  }
-
-  jwt.verify(token, "secret_key", (err, decoded) => {
-    if (err) {
-      return res.status(500).json({ error: "Failed to authenticate token" });
-    }
+  jwt.verify(token, "secret_key", async (err, decoded) => {
+    if (err) return res.status(500).json({ error: "Failed to authenticate token" });
 
     const userID = decoded.UserID;
 
-    // Get TutorID from tutor table based on UserID
-    const tutorQuery = "SELECT TutorID FROM tutor WHERE UserID = ?";
-    db.query(tutorQuery, [userID], (err, tutorResults) => {
-      if (err || tutorResults.length === 0) {
-        return res.status(500).json({ error: "Error fetching tutor details" });
-      }
+    try {
+      const tutor = await Tutor.findOne({ where: { UserID: userID } });
+      if (!tutor) return res.status(500).json({ error: "Error fetching tutor details" });
 
-      const tutorID = tutorResults[0].TutorID;
+      const classes = await Class.findAll({ where: { TutorID: tutor.TutorID } });
+      if (classes.length === 0) return res.status(500).json({ error: "Error fetching class details" });
 
-      // Get class details from class table based on TutorID
-      const classQuery =
-        "SELECT ClassID, Subject, Grade, Tutor FROM class WHERE TutorID = ?";
-      db.query(classQuery, [tutorID], (err, classResults) => {
-        if (err || classResults.length === 0) {
-          return res
-            .status(500)
-            .json({ error: "Error fetching class details" });
-        }
+      const classIDs = classes.map(c => c.ClassID);
 
-        const classIDs = classResults.map((classItem) => classItem.ClassID);
-
-        // Get scheduled class details from classschedule table based on ClassID
-        const scheduleQuery =
-          "SELECT * FROM classschedule WHERE ClassID IN (?)";
-        db.query(scheduleQuery, [classIDs], (err, scheduleResults) => {
-          if (err) {
-            return res
-              .status(500)
-              .json({ error: "Error fetching scheduled classes" });
-          }
-
-          // Combine class and schedule data
-          const combinedData = scheduleResults.map((schedule) => {
-            const classInfo = classResults.find(
-              (classItem) => classItem.ClassID === schedule.ClassID
-            );
-            return {
-              ...schedule,
-              Subject: classInfo.Subject,
-              Grade: classInfo.Grade,
-              Tutor: classInfo.Tutor,
-            };
-          });
-
-          res.status(200).json(combinedData);
-        });
+      const schedules = await ClassSchedule.findAll({
+        where: { ClassID: classIDs },
+        include: [{ model: Class, attributes: ['Subject', 'Grade', 'Tutor'] }]
       });
-    });
+
+      const results = schedules.map(schedule => ({
+        ScheduleID: schedule.ScheduleID,
+        ScheduleDate: schedule.ScheduleDate,
+        Start_Time: schedule.Start_Time,
+        Repeat_On: schedule.Repeat_On,
+        Hall_Num: schedule.Hall_Num,
+        End_Time: schedule.End_Time,
+        ClassID: schedule.ClassID,
+        Subject: schedule.class.Subject,
+        Grade: schedule.class.Grade,
+        Tutor: schedule.class.Tutor
+      }));
+
+      res.status(200).json(results);
+    } catch (error) {
+      console.error("Error fetching scheduled classes:", error);
+      res.status(500).json({ error: "Error fetching scheduled classes" });
+    }
   });
 };
 
 // get parent student scheduled classes
-exports.getParentStudentScheduledClasses = (req, res) => {
+exports.getParentStudentScheduledClasses = async (req, res) => {
   let token = req.headers["authorization"];
 
-  if (!token) {
-    return res.status(403).json({ error: "No token provided" });
-  }
+  if (!token) return res.status(403).json({ error: "No token provided" });
+  if (token.startsWith("Bearer ")) token = token.slice(7, token.length);
 
-  if (token.startsWith("Bearer ")) {
-    token = token.slice(7, token.length); // Remove Bearer prefix
-  }
-
-  jwt.verify(token, "secret_key", (err, decoded) => {
-    if (err) {
-      return res.status(500).json({ error: "Failed to authenticate token" });
-    }
+  jwt.verify(token, "secret_key", async (err, decoded) => {
+    if (err) return res.status(500).json({ error: "Failed to authenticate token" });
 
     const userID = decoded.UserID;
 
-    // get ParentID from parent table based on UserID
-    const parentQuery = "SELECT ParentID FROM parent WHERE UserID = ?";
-    db.query(parentQuery, [userID], (err, parentResults) => {
-      if (err || parentResults.length === 0) {
-        return res.status(500).json({ error: "Error fetching parent details" });
-      }
+    try {
+      const parent = await Parent.findOne({ where: { UserID: userID } });
+      if (!parent) return res.status(500).json({ error: "Error fetching parent details" });
 
-      const parentID = parentResults[0].ParentID;
+      const parentChild = await ParentChild.findOne({ where: { ParentID: parent.ParentID } });
+      if (!parentChild) return res.status(500).json({ error: "Error fetching student details" });
 
-      // get StudentID from parentchildren table based on ParentID
-      const studentQuery =
-        "SELECT StudentID FROM parentchildren WHERE ParentID = ?";
-      db.query(studentQuery, [parentID], (err, studentResults) => {
-        if (err || studentResults.length === 0) {
-          return res
-            .status(500)
-            .json({ error: "Error fetching student details" });
-        }
+      const student = await Student.findOne({ where: { StudentID: parentChild.StudentID } });
+      if (!student) return res.status(500).json({ error: "Error fetching user details" });
 
-        const studentID = studentResults[0].StudentID;
+      const enrolledClasses = await EnrolledClass.findAll({ where: { UserID: student.UserID } });
+      if (enrolledClasses.length === 0) return res.status(404).json({ error: "No classes found for this user" });
 
-        // get UserID from student table based on StudentID
-        const userQuery = "SELECT UserID FROM student WHERE StudentID = ?";
-        db.query(userQuery, [studentID], (err, userResults) => {
-          if (err || userResults.length === 0) {
-            return res
-              .status(500)
-              .json({ error: "Error fetching user details" });
-          }
+      const classIDs = enrolledClasses.map(ec => ec.ClassID);
 
-          const userID = userResults[0].UserID;
-
-          const getClassIDQuery =
-            "SELECT ClassID FROM enrolledclasses WHERE UserID = ?";
-
-          db.query(getClassIDQuery, [userID], (err, classResults) => {
-            if (err) {
-              console.error("Error fetching ClassID:", err);
-              return res.status(500).json({ error: "Error fetching ClassID" });
-            }
-
-            if (classResults.length === 0) {
-              return res
-                .status(404)
-                .json({ error: "No classes found for this user" });
-            }
-
-            const classIDs = classResults.map((result) => result.ClassID);
-
-            // Query to get scheduled class details from classschedule using ClassID
-            const getStudentScheduleQuery = `
-          SELECT class.Subject, class.Grade, class.Tutor, classschedule.ScheduleID, classschedule.Repeat_On, classschedule.Hall_Num, classschedule.Start_Time, classschedule.End_Time
-          FROM class
-          INNER JOIN classschedule ON class.ClassID = classschedule.ClassID
-          WHERE class.ClassID IN (?)
-        `;
-
-            db.query(getStudentScheduleQuery, [classIDs], (error, results) => {
-              if (error) {
-                console.error("Error fetching student schedule:", error);
-                return res
-                  .status(500)
-                  .json({ error: "Error fetching student schedule" });
-              }
-              res.json(results);
-            });
-          });
-        });
+      const schedules = await ClassSchedule.findAll({
+        where: { ClassID: classIDs },
+        include: [{ model: Class, attributes: ['Subject', 'Grade', 'Tutor'] }]
       });
-    });
+
+      const results = schedules.map(schedule => ({
+        Subject: schedule.class.Subject,
+        Grade: schedule.class.Grade,
+        Tutor: schedule.class.Tutor,
+        ScheduleID: schedule.ScheduleID,
+        Repeat_On: schedule.Repeat_On,
+        Hall_Num: schedule.Hall_Num,
+        Start_Time: schedule.Start_Time,
+        End_Time: schedule.End_Time
+      }));
+
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching student schedule:", error);
+      res.status(500).json({ error: "Error fetching student schedule" });
+    }
   });
 };

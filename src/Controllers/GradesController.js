@@ -1,61 +1,41 @@
-const db = require("../Config/db");
+const { Grade, Assignment, Class, Student, Parent, Tutor, EnrolledClass } = require("../Models");
 const jwt = require("jsonwebtoken");
 
 // upload grades
+exports.addGrades = async (req, res) => {
+  const { StudentID, assignmentTypeID, classID, grade, feedback } = req.body;
 
-exports.addGrades = (req, res) => {
-    const { StudentID, assignmentTypeID, classID, grade, feedback } = req.body;
-  
-    // First, get the AssignmentsID from the assignments table
-    db.query(
-      'SELECT AssignmentsID FROM assignments WHERE ClassID = ? AND assignment_type_id = ?',
-      [classID, assignmentTypeID],
-      (error, assignmentResults) => {
-        if (error) {
-          console.error('Error fetching AssignmentsID:', error);
-          res.status(500).send('Error fetching AssignmentsID');
-          return;
-        }
-  
-        if (assignmentResults.length === 0) {
-          res.status(404).send('Assignment not found');
-          return;
-        }
-  
-        const AssignmentsID = assignmentResults[0].AssignmentsID;
-  
-        // Insert data into the grades table
-        db.query(
-          'INSERT INTO grades (StudentID, AssignmentsID, Grade, Feedback) VALUES (?, ?, ?, ?)',
-          [StudentID, AssignmentsID, grade, feedback],
-          (error) => {
-            if (error) {
-              console.error('Error adding grade:', error);
-              res.status(500).send('Error adding grade');
-              return;
-            }
-  
-            res.status(200).send('Grade added successfully');
-          }
-        );
-      }
-    );
+  try {
+    const assignment = await Assignment.findOne({
+      where: { ClassID: classID, assignment_type_id: assignmentTypeID }
+    });
+
+    if (!assignment) {
+      return res.status(404).send('Assignment not found');
+    }
+
+    await Grade.create({
+      StudentID: StudentID,
+      AssignmentsID: assignment.AssignmentsID,
+      Grade: grade,
+      Feedback: feedback
+    });
+
+    res.status(200).send('Grade added successfully');
+  } catch (error) {
+    console.error('Error adding grade:', error);
+    res.status(500).send('Error adding grade');
+  }
 };
-
 
 // get grades
-exports.getGrades = (req, res) => {
+exports.getGrades = async (req, res) => {
   let token = req.headers['authorization'];
-  
-  if (!token) {
-    return res.status(403).json({ error: 'No token provided' });
-  }
 
-  if (token.startsWith('Bearer ')) {
-    token = token.slice(7, token.length); // Remove Bearer prefix
-  }
+  if (!token) return res.status(403).json({ error: 'No token provided' });
+  if (token.startsWith('Bearer ')) token = token.slice(7, token.length);
 
-  jwt.verify(token, 'secret_key', (err, decoded) => {
+  jwt.verify(token, 'secret_key', async (err, decoded) => {
     if (err) {
       console.error("Failed to authenticate token:", err);
       return res.status(500).json({ error: 'Failed to authenticate token' });
@@ -63,73 +43,56 @@ exports.getGrades = (req, res) => {
 
     const userID = decoded.UserID;
 
-    // First, get the StudentID using the UserID
-    const getStudentIdQuery = 'SELECT StudentID FROM student WHERE UserID = ?';
-    db.query(getStudentIdQuery, [userID], (error, studentResults) => {
-      if (error) {
-        console.error('Error fetching StudentID:', error);
-        return res.status(500).send('Error fetching StudentID');
-      }
+    try {
+      const student = await Student.findOne({ where: { UserID: userID } });
 
-      if (studentResults.length === 0) {
+      if (!student) {
         return res.status(404).send('Student not found');
       }
 
-      const studentID = studentResults[0].StudentID;
-
-      // Get the grades along with assignment details and subject from class table
-      const getGradesQuery = `
-        SELECT 
-          g.GradeID,
-          g.StudentID,
-          g.AssignmentsID,
-          g.Grade,
-          a.assignment_name,
-          a.UploadDate,
-          a.ClassID,
-          c.Subject
-        FROM 
-          grades g
-        JOIN 
-          assignments a ON g.AssignmentsID = a.AssignmentsID
-        JOIN 
-          class c ON a.ClassID = c.ClassID
-        WHERE 
-          g.StudentID = ?;
-      `;
-
-      db.query(getGradesQuery, [studentID], (error, gradeResults) => {
-        if (error) {
-          console.error('Error fetching grades:', error);
-          return res.status(500).send('Error fetching grades');
-        }
-
-        if (gradeResults.length === 0) {
-          return res.status(200).json({ success: true, message: 'No results yet', data: [] });
-        }
-
-        res.status(200).json({ success: true, data: gradeResults });
+      const grades = await Grade.findAll({
+        where: { StudentID: student.StudentID },
+        include: [{
+          model: Assignment,
+          attributes: ['assignment_name', 'UploadDate', 'ClassID'],
+          include: [{
+            model: Class,
+            attributes: ['Subject']
+          }]
+        }]
       });
-    });
+
+      if (grades.length === 0) {
+        return res.status(200).json({ success: true, message: 'No results yet', data: [] });
+      }
+
+      const formattedGrades = grades.map(g => ({
+        GradeID: g.GradeID,
+        StudentID: g.StudentID,
+        AssignmentsID: g.AssignmentsID,
+        Grade: g.Grade,
+        assignment_name: g.assignment.assignment_name,
+        UploadDate: g.assignment.UploadDate,
+        ClassID: g.assignment.ClassID,
+        Subject: g.assignment.class.Subject
+      }));
+
+      res.status(200).json({ success: true, data: formattedGrades });
+    } catch (error) {
+      console.error('Error fetching grades:', error);
+      res.status(500).send('Error fetching grades');
+    }
   });
 };
-
-
-
 
 // get parent student grades
-exports.getParentStudentgrades = (req, res) => {
+exports.getParentStudentgrades = async (req, res) => {
   let token = req.headers['authorization'];
 
-  if (!token) {
-    return res.status(403).json({ error: 'No token provided' });
-  }
+  if (!token) return res.status(403).json({ error: 'No token provided' });
+  if (token.startsWith('Bearer ')) token = token.slice(7, token.length);
 
-  if (token.startsWith('Bearer ')) {
-    token = token.slice(7, token.length); // Remove Bearer prefix
-  }
-
-  jwt.verify(token, 'secret_key', (err, decoded) => {
+  jwt.verify(token, 'secret_key', async (err, decoded) => {
     if (err) {
       console.error("Failed to authenticate token:", err);
       return res.status(500).json({ error: 'Failed to authenticate token' });
@@ -137,69 +100,57 @@ exports.getParentStudentgrades = (req, res) => {
 
     const userID = decoded.UserID;
 
-    // Get StudentID using the ParentID from parent table
-    const getStudentIdQuery = 'SELECT StudentNo FROM parent WHERE UserID = ?';
-    db.query(getStudentIdQuery, [userID], (error, studentResults) => {
-      if (error) {
-        console.error('Error fetching StudentID:', error);
-        return res.status(500).send('Error fetching StudentID');
-      }
+    try {
+      const parent = await Parent.findOne({ where: { UserID: userID } });
 
-      if (studentResults.length === 0) {
+      if (!parent) {
         return res.status(404).send('Student not found');
       }
 
-      const studentID = studentResults[0].StudentNo;
+      const studentID = parent.StudentNo;
 
-      // Get the grades along with assignment details and subject from class table
-      const getGradesQuery = `
-        SELECT 
-          g.GradeID,
-          g.StudentID,
-          g.AssignmentsID,
-          g.Grade,
-          a.assignment_name,
-          a.UploadDate,
-          a.ClassID,
-          c.Subject
-        FROM 
-          grades g
-        JOIN 
-          assignments a ON g.AssignmentsID = a.AssignmentsID
-        JOIN 
-          class c ON a.ClassID = c.ClassID
-        WHERE 
-          g.StudentID = ?;
-      `;
-
-      db.query(getGradesQuery, [studentID], (error, gradeResults) => {
-        if (error) {
-          console.error('Error fetching grades:', error);
-          return res.status(500).send('Error fetching grades');
-        }
-        if (gradeResults.length === 0) {
-          return res.status(404).send('No grades found');
-        }
-
-        res.status(200).json({ success: true, data: gradeResults });
+      const grades = await Grade.findAll({
+        where: { StudentID: studentID },
+        include: [{
+          model: Assignment,
+          attributes: ['assignment_name', 'UploadDate', 'ClassID'],
+          include: [{
+            model: Class,
+            attributes: ['Subject']
+          }]
+        }]
       });
-    });
+
+      if (grades.length === 0) {
+        return res.status(404).send('No grades found');
+      }
+
+      const formattedGrades = grades.map(g => ({
+        GradeID: g.GradeID,
+        StudentID: g.StudentID,
+        AssignmentsID: g.AssignmentsID,
+        Grade: g.Grade,
+        assignment_name: g.assignment.assignment_name,
+        UploadDate: g.assignment.UploadDate,
+        ClassID: g.assignment.ClassID,
+        Subject: g.assignment.class.Subject
+      }));
+
+      res.status(200).json({ success: true, data: formattedGrades });
+    } catch (error) {
+      console.error('Error fetching grades:', error);
+      res.status(500).send('Error fetching grades');
+    }
   });
 };
 
-
-exports.getGradeHistory = (req, res) => {
+exports.getGradeHistory = async (req, res) => {
   let token = req.headers['authorization'];
 
-  if (!token) {
-    return res.status(403).json({ error: 'No token provided' });
-  }
+  if (!token) return res.status(403).json({ error: 'No token provided' });
+  if (token.startsWith('Bearer ')) token = token.slice(7, token.length);
 
-  if (token.startsWith('Bearer ')) {
-    token = token.slice(7, token.length); // Remove Bearer prefix
-  }
-
-  jwt.verify(token, 'secret_key', (err, decoded) => {
+  jwt.verify(token, 'secret_key', async (err, decoded) => {
     if (err) {
       console.error("Failed to authenticate token:", err);
       return res.status(500).json({ error: 'Failed to authenticate token' });
@@ -207,153 +158,66 @@ exports.getGradeHistory = (req, res) => {
 
     const userID = decoded.UserID;
 
-    // Get TutorID from tutor table
-    const getTutorIDQuery = 'SELECT TutorID FROM tutor WHERE UserID = ?';
-    db.query(getTutorIDQuery, [userID], (err, tutorResults) => {
-      if (err) {
-        console.error("Error fetching TutorID:", err);
-        return res.status(500).json({ error: 'Error fetching TutorID' });
-      }
+    try {
+      const tutor = await Tutor.findOne({ where: { UserID: userID } });
 
-      if (tutorResults.length === 0) {
+      if (!tutor) {
         return res.status(404).json({ error: 'TutorID not found' });
       }
 
-      const tutorID = tutorResults[0].TutorID;
+      const tutorClasses = await Class.findAll({ where: { TutorID: tutor.TutorID } });
+      const classIDs = tutorClasses.map(c => c.ClassID);
 
-      // Get UserID from enrolledclasses table related to TutorID
-      const getUserIDsQuery = `
-        SELECT ec.UserID
-        FROM enrolledclasses ec
-        JOIN class c ON ec.ClassID = c.ClassID
-        WHERE c.TutorID = ?`;
-      db.query(getUserIDsQuery, [tutorID], (err, enrolledResults) => {
-        if (err) {
-          console.error("Error fetching UserID:", err);
-          return res.status(500).json({ error: 'Error fetching UserID' });
-        }
+      const enrolledClasses = await EnrolledClass.findAll({ where: { ClassID: classIDs } });
+      const userIDs = enrolledClasses.map(ec => ec.UserID);
 
-        if (enrolledResults.length === 0) {
-          return res.status(404).json({ error: 'No students found for this tutor' });
-        }
+      if (userIDs.length === 0) {
+        return res.status(404).json({ error: 'No students found for this tutor' });
+      }
 
-        const userIDs = enrolledResults.map(row => row.UserID);
+      const students = await Student.findAll({ where: { UserID: userIDs } });
+      const studentIDs = students.map(s => s.StudentID);
 
-        // Get StudentID, FirstName, and LastName from student table
-        const getStudentDetailsQuery = 'SELECT StudentID, FirstName, LastName FROM student WHERE UserID IN (?)';
-        db.query(getStudentDetailsQuery, [userIDs], (err, studentResults) => {
-          if (err) {
-            console.error("Error fetching student details:", err);
-            return res.status(500).json({ error: 'Error fetching student details' });
-          }
+      if (studentIDs.length === 0) {
+        return res.status(404).json({ error: 'No students found' });
+      }
 
-          if (studentResults.length === 0) {
-            return res.status(404).json({ error: 'No students found' });
-          }
-
-          const studentIDs = studentResults.map(student => student.StudentID);
-          const studentDetailsMap = studentResults.reduce((map, student) => {
-            map[student.StudentID] = {
-              FirstName: student.FirstName,
-              LastName: student.LastName
-            };
-            return map;
-          }, {});
-
-          // Get AssignmentsID, Grade, and Feedback from grades table
-          const getGradesQuery = 'SELECT AssignmentsID, StudentID, Grade, Feedback FROM grades WHERE StudentID IN (?)';
-          db.query(getGradesQuery, [studentIDs], (err, gradeResults) => {
-            if (err) {
-              console.error("Error fetching grades:", err);
-              return res.status(500).json({ error: 'Error fetching grades' });
-            }
-
-            if (gradeResults.length === 0) {
-              return res.status(404).json({ error: 'No grades found' });
-            }
-
-            const assignmentIDs = gradeResults.map(grade => grade.AssignmentsID);
-            const gradeDetailsMap = gradeResults.reduce((map, grade) => {
-              if (!map[grade.AssignmentsID]) {
-                map[grade.AssignmentsID] = [];
-              }
-              map[grade.AssignmentsID].push({
-                StudentID: grade.StudentID,
-                Grade: grade.Grade,
-                Feedback: grade.Feedback
-              });
-              return map;
-            }, {});
-
-            // Get ClassID and assignment_name from assignments table
-            const getAssignmentsQuery = 'SELECT AssignmentsID, ClassID, assignment_name FROM assignments WHERE AssignmentsID IN (?)';
-            db.query(getAssignmentsQuery, [assignmentIDs], (err, assignmentResults) => {
-              if (err) {
-                console.error("Error fetching assignments:", err);
-                return res.status(500).json({ error: 'Error fetching assignments' });
-              }
-
-              if (assignmentResults.length === 0) {
-                return res.status(404).json({ error: 'No assignments found' });
-              }
-
-              const classIDs = assignmentResults.map(assignment => assignment.ClassID);
-              const assignmentDetailsMap = assignmentResults.reduce((map, assignment) => {
-                map[assignment.AssignmentsID] = {
-                  ClassID: assignment.ClassID,
-                  assignment_name: assignment.assignment_name
-                };
-                return map;
-              }, {});
-
-              // Get Grade from class table
-              const getClassDetailsQuery = 'SELECT ClassID, Grade FROM class WHERE ClassID IN (?)';
-              db.query(getClassDetailsQuery, [classIDs], (err, classResults) => {
-                if (err) {
-                  console.error("Error fetching class details:", err);
-                  return res.status(500).json({ error: 'Error fetching class details' });
-                }
-
-                if (classResults.length === 0) {
-                  return res.status(404).json({ error: 'No class details found' });
-                }
-
-                const classDetailsMap = classResults.reduce((map, cls) => {
-                  map[cls.ClassID] = {
-                    Grade: cls.Grade
-                  };
-                  return map;
-                }, {});
-
-                // Compile final result
-                const gradeHistory = [];
-
-                for (const [assignmentsID, gradeEntries] of Object.entries(gradeDetailsMap)) {
-                  const assignmentDetails = assignmentDetailsMap[assignmentsID];
-                  const classDetails = classDetailsMap[assignmentDetails.ClassID];
-
-                  gradeEntries.forEach(gradeEntry => {
-                    const studentDetails = studentDetailsMap[gradeEntry.StudentID];
-                    gradeHistory.push({
-                      StudentID: gradeEntry.StudentID,
-                      FirstName: studentDetails.FirstName,
-                      LastName: studentDetails.LastName,
-                      AssignmentsID: assignmentsID,
-                      Grade: gradeEntry.Grade,
-                      Feedback: gradeEntry.Feedback,
-                      ClassID: assignmentDetails.ClassID,
-                      assignment_name: assignmentDetails.assignment_name,
-                      GradeLevel: classDetails.Grade
-                    });
-                  });
-                }
-
-                res.status(200).json(gradeHistory);
-              });
-            });
-          });
-        });
+      const studentDetailsMap = {};
+      students.forEach(s => {
+        studentDetailsMap[s.StudentID] = { FirstName: s.FirstName, LastName: s.LastName };
       });
-    });
+
+      const grades = await Grade.findAll({
+        where: { StudentID: studentIDs },
+        include: [{
+          model: Assignment,
+          include: [{ model: Class }]
+        }]
+      });
+
+      if (grades.length === 0) {
+        return res.status(404).json({ error: 'No grades found' });
+      }
+
+      const gradeHistory = grades.map(g => {
+        const studentDetails = studentDetailsMap[g.StudentID];
+        return {
+          StudentID: g.StudentID,
+          FirstName: studentDetails.FirstName,
+          LastName: studentDetails.LastName,
+          AssignmentsID: g.AssignmentsID,
+          Grade: g.Grade,
+          Feedback: g.Feedback,
+          ClassID: g.assignment.ClassID,
+          assignment_name: g.assignment.assignment_name,
+          GradeLevel: g.assignment.class.Grade
+        };
+      });
+
+      res.status(200).json(gradeHistory);
+    } catch (error) {
+      console.error("Error fetching grade history:", error);
+      res.status(500).json({ error: 'Error fetching grade history' });
+    }
   });
 };

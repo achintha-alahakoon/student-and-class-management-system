@@ -1,5 +1,5 @@
-const db = require("../Config/db");
 const jwt = require("jsonwebtoken");
+const { User, Student, Parent, Tutor, EnrolledClass, Class } = require("../Models");
 
 // Middleware to verify JWT token
 exports.verifyJWT = (req, res, next) => {
@@ -14,142 +14,74 @@ exports.verifyJWT = (req, res, next) => {
 };
 
 // Route for user login
-exports.login = (req, res) => {
+exports.login = async (req, res) => {
   const { username, password } = req.body;
 
-  const sql = "SELECT * FROM user WHERE username = ? AND password = ?";
+  try {
+    const user = await User.findOne({ where: { username, password } });
 
-  db.query(sql, [username, password], (err, data) => {
-    if (err) {
-      return res.status(500).json({ error: "Internal Server Error" });
-    }
-
-    if (data.length > 0) {
-      const user = data[0];
+    if (user) {
       const token = jwt.sign({ UserID: user.UserID, role: user.userrole }, "secret_key", {
         expiresIn: "2h",
       });
-      const { userrole } = user; // Extract userrole from the user object
-      res.status(200).json({ status: "success", role: userrole, token });
+      res.status(200).json({ status: "success", role: user.userrole, token });
     } else {
       res.status(401).json({ error: "Invalid credentials" });
     }
-  });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 };
 
-
-
 // Route for getting user details
-
-exports.getUser = (req, res) => {
+exports.getUser = async (req, res) => {
   const userId = req.params.userId;
 
-  const userSql = "SELECT * FROM user WHERE UserID = ?";
-  db.query(userSql, [userId], (err, userData) => {
-    if (err) {
-      return res.status(500).json({ error: "Internal Server Error" });
-    }
-    if (userData.length === 0) {
+  try {
+    const user = await User.findByPk(userId);
+    if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const user = userData[0];
     const userrole = user.userrole;
+    let userDetails = user.toJSON();
 
-    let detailSql = "";
-    let detailParams = [userId];
+    if (userrole === "Student") {
+      const student = await Student.findOne({ where: { UserID: userId } });
+      if (!student) return res.status(404).json({ error: "Student details not found" });
+      userDetails = { ...userDetails, ...student.toJSON() };
 
-    switch (userrole) {
-      case "Student":
-        detailSql = "SELECT * FROM student WHERE UserID = ?";
-        break;
-      case "Tutor":
-        detailSql = "SELECT * FROM tutor WHERE UserID = ?";
-        break;
-      case "Parent":
-        detailSql = "SELECT * FROM parent WHERE UserID = ?";
-        break;
+      const enrolledClasses = await EnrolledClass.findAll({
+        where: { UserID: userId },
+        include: [{ model: Class, attributes: ['Subject', 'Tutor'] }],
+      });
+      userDetails.classes = enrolledClasses.map(ec => ({
+        ClassID: ec.ClassID,
+        Subject: ec.class.Subject,
+        Tutor: ec.class.Tutor,
+      }));
+    } else if (userrole === "Tutor") {
+      const tutor = await Tutor.findOne({ where: { UserID: userId } });
+      if (!tutor) return res.status(404).json({ error: "Tutor details not found" });
+      userDetails = { ...userDetails, ...tutor.toJSON() };
 
-      default:
-        return res.status(400).json({ error: "Invalid user type" });
+      const classes = await Class.findAll({
+        where: { TutorID: tutor.TutorID },
+        attributes: ['Subject', 'Grade']
+      });
+      userDetails.classes = classes.map(c => c.toJSON());
+    } else if (userrole === "Parent") {
+      const parent = await Parent.findOne({ where: { UserID: userId } });
+      if (!parent) return res.status(404).json({ error: "Parent details not found" });
+      userDetails = { ...userDetails, ...parent.toJSON() };
+    } else {
+      return res.status(400).json({ error: "Invalid user type" });
     }
 
-    db.query(detailSql, detailParams, (err, detailData) => {
-      if (err) {
-        return res.status(500).json({ error: "Internal Server Error" });
-      }
-
-      if (detailData.length === 0) {
-        return res.status(404).json({ error: `${userrole} details not found` });
-      }
-
-      const userDetails = {
-        ...user,
-        ...detailData[0],
-      };
-
-      if (userrole === "Student") {
-        const enrolledClassesSql = `
-          SELECT ec.ClassID, c.Subject, c.Tutor
-          FROM enrolledclasses ec
-          JOIN class c ON ec.ClassID = c.ClassID
-          WHERE ec.UserID = ?`;
-        db.query(enrolledClassesSql, [userId], (err, classData) => {
-          if (err) {
-            return res.status(500).json({ error: "Internal Server Error" });
-          }
-
-          userDetails.classes = classData;
-
-          res.status(200).json({ status: "success", user: userDetails });
-        });
-      } else if (userrole === "Tutor") {
-        const tutorIdSql = "SELECT TutorID FROM tutor WHERE UserID = ?";
-        db.query(tutorIdSql, [userId], (err, tutorData) => {
-          if (err) {
-            return res.status(500).json({ error: "Internal Server Error" });
-          }
-
-          if (tutorData.length === 0) {
-            return res.status(404).json({ error: "Tutor details not found" });
-          }
-
-          const tutorId = tutorData[0].TutorID;
-          const tutorClassesSql = `
-            SELECT Subject, Grade
-            FROM class
-            WHERE TutorID = ?`;
-          db.query(tutorClassesSql, [tutorId], (err, classData) => {
-            if (err) {
-              return res.status(500).json({ error: "Internal Server Error" });
-            }
-
-            userDetails.classes = classData;
-
-            res.status(200).json({ status: "success", user: userDetails });
-          });
-        });
-      } 
-      // else if (userrole === "Parent") {
-      //   const parentClassesSql = `
-      //     SELECT c.Subject, c.Grade
-      //     FROM class c
-      //     JOIN tutor t ON c.TutorID = t.UserID
-      //     WHERE t.UserID = ?`;
-      //   db.query(parentClassesSql, [userId], (err, classData) => {
-      //     if (err) {
-      //       return res.status(500).json({ error: "Internal Server Error" });
-      //     }
-
-      //     userDetails.classes = classData;
-
-      //     res.status(200).json({ status: "success", user: userDetails });
-      //   });
-      // }
-       else {
-        res.status(200).json({ status: "success", user: userDetails });
-      }
-    });
-  });
+    res.status(200).json({ status: "success", user: userDetails });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 };
-
