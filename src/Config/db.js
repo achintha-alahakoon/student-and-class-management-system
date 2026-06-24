@@ -13,6 +13,16 @@ db.connect((err) => {
     return;
   }
   console.log('Connected to database');
+
+  db.query('SELECT @@port AS port, @@datadir AS dataDir, @@version AS version', (err, result) => {
+            if (err) {
+                console.log(err);
+            } else {
+                console.log('DB Info:', result);
+            }
+        });
 });
+
+
 
 module.exports = db;
