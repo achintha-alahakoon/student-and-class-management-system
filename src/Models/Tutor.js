@@ -37,6 +37,10 @@ const Tutor = db.define('tutor', {
     type: DataTypes.INTEGER,
     allowNull: false,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
 }, {
   tableName: 'tutor',
   timestamps: false,

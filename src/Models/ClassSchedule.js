@@ -25,6 +25,10 @@ const ClassSchedule = db.define('classschedule', {
   ClassID: {
     type: DataTypes.INTEGER,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
 }, {
   tableName: 'classschedule',
   timestamps: false,

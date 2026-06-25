@@ -37,6 +37,10 @@ const Parent = db.define('parent', {
     type: DataTypes.INTEGER,
     allowNull: false,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
 }, {
   tableName: 'parent',
   timestamps: false,

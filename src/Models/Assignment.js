@@ -22,6 +22,10 @@ const Assignment = db.define('assignment', {
   assignment_type_id: {
     type: DataTypes.INTEGER,
     allowNull: true,
+  },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
   }
 }, {
   tableName: 'assignments',

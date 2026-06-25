@@ -20,6 +20,10 @@ const User = db.define('user', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
 }, {
   tableName: 'user',
   timestamps: false,

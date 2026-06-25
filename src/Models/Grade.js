@@ -16,6 +16,10 @@ const Grade = db.define('grade', {
   Grade: {
     type: DataTypes.DECIMAL(5, 2),
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
   Feedback: {
     type: DataTypes.STRING,
   },

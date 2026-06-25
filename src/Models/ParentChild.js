@@ -16,6 +16,10 @@ const ParentChild = db.define('parentchild', {
   FirstName: {
     type: DataTypes.STRING,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
   LastName: {
     type: DataTypes.STRING,
   },

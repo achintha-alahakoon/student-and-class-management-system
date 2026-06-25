@@ -22,6 +22,10 @@ const Class = db.define('class', {
   Fees: {
     type: DataTypes.DECIMAL(10, 2),
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
 }, {
   tableName: 'class',
   timestamps: false,

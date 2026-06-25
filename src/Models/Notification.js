@@ -31,6 +31,10 @@ const Notification = db.define('notification', {
   Content: {
     type: DataTypes.TEXT,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
 }, {
   tableName: 'notification',
   timestamps: false,

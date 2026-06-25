@@ -13,6 +13,10 @@ const Attendance = db.define('attendance', {
   Status: {
     type: DataTypes.STRING,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
   AttendanceDate: {
     type: DataTypes.DATEONLY,
   },

@@ -38,6 +38,10 @@ const Student = db.define('student', {
     type: DataTypes.INTEGER,
     allowNull: false,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
 }, {
   tableName: 'student',
   timestamps: false,

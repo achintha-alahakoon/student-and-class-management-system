@@ -31,6 +31,10 @@ const Payment = db.define('payment', {
   ClassID: {
     type: DataTypes.INTEGER,
   },
+  TenantID: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
 }, {
   tableName: 'payment',
   timestamps: false,
