@@ -30,10 +30,16 @@ exports.deleteStudent = async (req, res) => {
 exports.getStudent = async (req, res) => {
   try {
     const studentId = req.params.studentId;
-    const student = await Student.findByPk(studentId, { attributes: ['FirstName'] });
+    // ✅ Fetch ALL fields (or specify all needed fields)
+    const student = await Student.findByPk(studentId, {
+      attributes: [
+        'StudentID', 'FirstName', 'LastName', 'Gender', 'Grade',
+        'Birthday', 'Address', 'TelNo', 'Email', 'UserID', 'TenantID'
+      ]
+    });
 
     if (student) {
-      res.json({ success: true, FirstName: student.FirstName });
+      res.json({ success: true, data: student });
     } else {
       res.status(404).json({ success: false, message: "Student not found" });
     }
