@@ -1,58 +1,164 @@
 const { Class, ClassSchedule, Tutor, EnrolledClass, Parent, ParentChild, Student } = require("../Models");
-const jwt = require("jsonwebtoken");
+const db     = require("../Config/db");
 
 // Add class and class schedule
 exports.addClass = async (req, res) => {
-  const { startDate, grade, repeatOn, hallNumber, startTime, endTime, tutor, subject } = req.body;
+  const transaction = await db.transaction();
 
   try {
-    const classObj = await Class.findOne({ where: { Grade: grade, Tutor: tutor, Subject: subject } });
+    const {
+      name,
+      grade,
+      subject,
+      tutorId,
+      roomNumber,
+      schedule,
+      classFee,
+      status,
+      description,
+    } = req.body;
 
-    if (!classObj) {
-      return res.status(400).json({ error: "Class with the specified Grade, Tutor, and Subject does not exist" });
-    }
+    const tenantId = req.user.tenantId;
 
-    await ClassSchedule.create({
-      ScheduleDate: startDate,
-      Start_Time: startTime,
-      Repeat_On: repeatOn,
-      Hall_Num: hallNumber,
-      End_Time: endTime,
-      ClassID: classObj.ClassID
+    // Validate tutor belongs to same tenant
+    const tutor = await Tutor.findOne({
+      where: {
+        TutorID: tutorId,
+        TenantID: tenantId,
+      },
     });
 
-    res.status(200).json({ message: "Class schedule added successfully" });
+    if (!tutor) {
+      await transaction.rollback();
+      return res.status(404).json({
+        message: "Tutor not found",
+      });
+    }
+
+    // Create class
+    const newClass = await Class.create(
+      {
+        ClassName: name,
+        Subject: subject,
+        Grade: grade,
+        TutorID: tutorId,
+        Fees: classFee,
+        Description: description,
+        isActive: status === "Active",
+        TenantID: tenantId,
+      },
+      { transaction }
+    );
+
+    // Create schedules
+    if (schedule?.days?.length > 0) {
+      const schedules = schedule.days.map((day) => ({
+        ScheduleDate: new Date(),
+        Repeat_On: day,
+        Start_Time: schedule.startTime,
+        End_Time: schedule.endTime,
+        Hall_Num: roomNumber,
+        ClassID: newClass.ClassID,
+        TenantID: tenantId,
+      }));
+
+      await ClassSchedule.bulkCreate(schedules, {
+        transaction,
+      });
+    }
+
+    await transaction.commit();
+
+    res.status(201).json({
+      success: true,
+      message: "Class created successfully",
+      classId: newClass.ClassID,
+    });
   } catch (error) {
-    console.error("Error adding class schedule:", error);
-    res.status(500).json({ error: "Error adding class schedule" });
+    await transaction.rollback();
+
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
 // Get all scheduled classes
-exports.getSchedule = async (req, res) => {
+exports.getScheduledClasses = async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+
     const schedules = await ClassSchedule.findAll({
-      include: [{
-        model: Class,
-        attributes: ['Subject', 'Grade', 'Tutor']
-      }]
+      where: { TenantID: tenantId },
+      include: [
+        {
+          model: Class,
+          attributes: ['ClassID', 'ClassName', 'Subject', 'Grade', 'TutorID', 'isActive', 'Description'],
+          include: [{
+            model: Tutor,
+            attributes: ['FirstName', 'LastName']
+          }]
+        }
+      ],
+      order: [['Start_Time', 'ASC']]
     });
 
     const results = schedules.map(schedule => ({
+      ClassID: schedule.class.ClassID,
+      ClassName: schedule.class.ClassName,
       Subject: schedule.class.Subject,
       Grade: schedule.class.Grade,
-      Tutor: schedule.class.Tutor,
+      Tutor: schedule.class.tutor
+        ? `${schedule.class.tutor.FirstName} ${schedule.class.tutor.LastName}`
+        : 'Unknown',
+      TutorID: schedule.class.TutorID,
+      Status: schedule.class.isActive,
+      Description: schedule.class.Description,
       ScheduleID: schedule.ScheduleID,
       Repeat_On: schedule.Repeat_On,
       Hall_Num: schedule.Hall_Num,
       Start_Time: schedule.Start_Time,
-      End_Time: schedule.End_Time
+      End_Time: schedule.End_Time,
+      ScheduleDate: schedule.ScheduleDate
     }));
 
     res.json(results);
   } catch (error) {
     console.error("Error fetching scheduled classes:", error);
-    res.status(500).json({ error: "Error fetching scheduled classes" });
+    res.status(500).json({
+      error: error.message || "Error fetching scheduled classes"
+    });
+  }
+};
+
+// Get scheduled class by ID
+exports.getScheduledClassById = async (req, res) => {
+  const { ScheduleID } = req.params;
+
+  try {
+    const schedule = await ClassSchedule.findOne({
+      where: { ScheduleID },
+      include: [
+        {
+          model: Class,
+          attributes: ['ClassID', 'ClassName', 'Subject', 'Grade', 'TutorID', 'isActive', 'Description'],
+          include: [{
+            model: Tutor,
+            attributes: ['FirstName', 'LastName']
+          }]
+        }
+      ]
+    });
+
+    if (!schedule) return res.status(404).json({ error: "Class schedule not found" });
+
+    res.json(schedule);
+  } catch (error) {
+    console.error("Error fetching scheduled class by ID:", error);
+    res.status(500).json({ error: "Error fetching scheduled class by ID" });
   }
 };
 

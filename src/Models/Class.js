@@ -7,6 +7,9 @@ const Class = db.define('class', {
     primaryKey: true,
     autoIncrement: true,
   },
+  ClassName: { 
+    type: DataTypes.STRING,
+  },
   Subject: {
     type: DataTypes.STRING,
   },
@@ -16,11 +19,16 @@ const Class = db.define('class', {
   TutorID: {
     type: DataTypes.INTEGER,
   },
-  Tutor: {
-    type: DataTypes.STRING,
-  },
   Fees: {
     type: DataTypes.DECIMAL(10, 2),
+  },
+  Description: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  isActive:  { 
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
   TenantID: {
     type: DataTypes.INTEGER,

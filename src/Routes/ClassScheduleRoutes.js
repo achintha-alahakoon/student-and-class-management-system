@@ -1,14 +1,16 @@
 const express = require('express');
+const auth = require("../middleware/auth");
 const ClassScheduleController = require('../Controllers/ClassScheduleController');
 
 const router = express.Router();
 
-router.post("/", ClassScheduleController.addClass);
-router.get("/scheduledClasses", ClassScheduleController.getSchedule);
-router.get("/student/scheduledClasses", ClassScheduleController.getStudentSchedule);
-router.delete("/:ScheduleID", ClassScheduleController.deleteScheduleClass);
-router.get("/getTutorScheduledClasses", ClassScheduleController.getTutorScheduledClasses);
-router.get("/getParentStudentScheduledClasses", ClassScheduleController.getParentStudentScheduledClasses);
+router.post("/add-class", auth, ClassScheduleController.addClass);
+router.get("/scheduledClasses", auth, ClassScheduleController.getScheduledClasses);
+router.get("/scheduledClasses/:ScheduleID", auth, ClassScheduleController.getScheduledClassById);
+router.get("/student/scheduledClasses", auth, ClassScheduleController.getStudentSchedule);
+router.delete("/:ScheduleID", auth, ClassScheduleController.deleteScheduleClass);
+router.get("/getTutorScheduledClasses", auth, ClassScheduleController.getTutorScheduledClasses);
+router.get("/getParentStudentScheduledClasses", auth, ClassScheduleController.getParentStudentScheduledClasses);
 
 
 module.exports = router;
