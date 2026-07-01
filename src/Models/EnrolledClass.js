@@ -13,9 +13,6 @@ const EnrolledClass = db.define('enrolledclass', {
   ClassID: {
     type: DataTypes.INTEGER,
   },
-  TutorID: {
-    type: DataTypes.INTEGER,
-  },
   TenantID: {
     type: DataTypes.INTEGER,
     allowNull: false,
