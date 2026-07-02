@@ -137,10 +137,12 @@ exports.getScheduledClasses = async (req, res) => {
 // Get scheduled class by ID
 exports.getScheduledClassById = async (req, res) => {
   const { ScheduleID } = req.params;
+  const tenantId = req.user?.tenantId;
 
   try {
+    // Get schedule with class and tutor
     const schedule = await ClassSchedule.findOne({
-      where: { ScheduleID },
+      where: { ScheduleID, TenantID: tenantId },
       include: [
         {
           model: Class,
@@ -155,12 +157,71 @@ exports.getScheduledClassById = async (req, res) => {
 
     if (!schedule) return res.status(404).json({ error: "Class schedule not found" });
 
-    res.json(schedule);
+    // Get enrolled students for this class
+    const enrolledClasses = await EnrolledClass.findAll({
+      where: {
+        ClassID: schedule.ClassID,
+        TenantID: tenantId
+      }
+    });
+
+    // Get student details for enrolled users
+    const userIds = enrolledClasses.map(ec => ec.UserID);
+    const students = await Student.findAll({
+      where: { UserID: userIds, TenantID: tenantId },
+      attributes: ['StudentID', 'FirstName', 'LastName', 'Gender', 'Grade', 'Email', 'TelNo', 'UserID']
+    });
+
+    // Combine data
+    const result = {
+      ...schedule.toJSON(),
+      enrolledStudents: students
+    };
+
+    res.json(result);
   } catch (error) {
     console.error("Error fetching scheduled class by ID:", error);
     res.status(500).json({ error: "Error fetching scheduled class by ID" });
   }
 };
+
+// exports.getScheduledClassById = async (req, res) => {
+//   const { ScheduleID } = req.params;
+//   const tenantId = req.user?.tenantId;
+
+//   try {
+//     const schedule = await ClassSchedule.findOne({
+//       where: { ScheduleID, TenantID: tenantId },
+//       include: [
+//         {
+//           model: Class,
+//           attributes: ['ClassID', 'ClassName', 'Subject', 'Grade', 'TutorID', 'isActive', 'Description'],
+//           include: [
+//             {
+//               model: Tutor,
+//               attributes: ['FirstName', 'LastName']
+//             },
+//             {
+//               model: EnrolledClass,
+//               where: { TenantID: tenantId },
+//               include: [{
+//                 model: Student,
+//                 attributes: ['StudentID', 'FirstName', 'LastName', 'Gender', 'Grade', 'Email', 'TelNo']
+//               }]
+//             }
+//           ]
+//         }
+//       ]
+//     });
+
+//     if (!schedule) return res.status(404).json({ error: "Class schedule not found" });
+
+//     res.json(schedule);
+//   } catch (error) {
+//     console.error("Error fetching scheduled class by ID:", error);
+//     res.status(500).json({ error: "Error fetching scheduled class by ID" });
+//   }
+// };
 
 //Delete class schedule
 exports.deleteScheduleClass = async (req, res) => {
