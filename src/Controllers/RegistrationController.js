@@ -1,4 +1,4 @@
-const { User, Student, Parent, Tutor } = require("../Models");
+const { User, Student, Parent, Tutor, EnrolledClass} = require("../Models");
 const bcrypt = require("bcryptjs");
 const db     = require("../Config/db");
 
@@ -9,19 +9,32 @@ exports.registerStudent = async (req, res) => {
     lastName,
     gender,
     grade,
-    birthday,
+    dateOfBirth,
     address,
-    telephoneNumber,
+    phone,
     email,
     username,
     password,
+    classIds,
   } = req.body;
+
+  // ✅ Parse classIds (comes as JSON string from FormData)
+  const parsedClassIds = classIds ? (Array.isArray(classIds) ? classIds : JSON.parse(classIds)) : [];
+
+  const tenantId = req.user.tenantId;
 
   const transaction = await db.transaction();
 
   try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const user = await User.create(
-      { username, password, userrole: 'Student' },
+      {
+        username,
+        password: hashedPassword,
+        userrole: 'Student',
+        TenantID: tenantId
+      },
       { transaction }
     );
 
@@ -31,14 +44,26 @@ exports.registerStudent = async (req, res) => {
         LastName: lastName,
         Gender: gender,
         Grade: grade,
-        Birthday: birthday,
+        Birthday: dateOfBirth,
         Address: address,
-        TelNo: telephoneNumber,
+        TelNo: phone,
         Email: email,
         UserID: user.UserID,
+        TenantID: tenantId
       },
       { transaction }
     );
+
+    // ✅ Use parsedClassIds
+    if (parsedClassIds.length > 0) {
+      const enrolledClasses = parsedClassIds.map(classId => ({
+        UserID: user.UserID,
+        ClassID: classId,
+        TenantID: tenantId,
+      }));
+
+      await EnrolledClass.bulkCreate(enrolledClasses, { transaction });
+    }
 
     await transaction.commit();
 
@@ -91,7 +116,7 @@ exports.registerParent = async (req, res) => {
         {
           FirstName: firstName,
           LastName: lastName,
-          TelNo: telephoneNumber,
+          TelNo: phone,
           Email: email,
           NICNo: nicNumber,
           StudentNo: studentNumber,
@@ -133,10 +158,6 @@ exports.registerTutor = async (req, res) => {
  
   // From auth middleware — matches decoded JWT keys
   const TenantID = req.user?.tenantId;
- 
-  console.log("req.user:", req.user);
-  console.log("TenantID:", TenantID);
-  console.log("req.body:", req.body);
  
   if (!TenantID) {
     return res.status(401).json({
@@ -213,8 +234,6 @@ exports.registerTutor = async (req, res) => {
       { transaction }
     );
  
-    console.log("User created with ID:", user.UserID);
- 
     // Step 2: Create tutor row linked to user
     const tutor = await Tutor.create(
       {
@@ -232,8 +251,6 @@ exports.registerTutor = async (req, res) => {
       },
       { transaction }
     );
- 
-    console.log("Tutor created with ID:", tutor.TutorID);
  
     await transaction.commit();
  

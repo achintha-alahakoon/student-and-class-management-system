@@ -1,4 +1,4 @@
-const { Student, User, Tutor, EnrolledClass } = require("../Models");
+const { Student, User, Tutor, EnrolledClass, Class, Payment, Attendance } = require("../Models");
 const jwt = require("jsonwebtoken");
 
 //get all student data
@@ -26,23 +26,76 @@ exports.deleteStudent = async (req, res) => {
   }
 };
 
-//get single student data
-exports.getStudent = async (req, res) => {
+//get student data by ID
+exports.getStudentById = async (req, res) => {
   try {
     const studentId = req.params.studentId;
-    // ✅ Fetch ALL fields (or specify all needed fields)
+    const tenantId = req.user?.tenantId;  // ✅ Removed fallback to req.TenantID
+
+    // ✅ Validate tenantId exists
+    if (!tenantId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: Authentication required"
+      });
+    }
+
+    // Get student
     const student = await Student.findByPk(studentId, {
       attributes: [
-        'StudentID', 'FirstName', 'LastName', 'Gender', 'Grade',
+        'StudentID', 'FirstName', 'LastName', 'Grade', 'Gender',
         'Birthday', 'Address', 'TelNo', 'Email', 'UserID', 'TenantID'
       ]
     });
 
-    if (student) {
-      res.json({ success: true, data: student });
-    } else {
-      res.status(404).json({ success: false, message: "Student not found" });
+    if (!student) {
+      return res.status(404).json({ success: false, message: "Student not found" });
     }
+
+    // ✅ Verify student belongs to this tenant
+    if (student.TenantID !== tenantId) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    // Fetch all related data in parallel
+    const [enrolledClasses, payments, attendance] = await Promise.all([
+      EnrolledClass.findAll({
+        where: { UserID: student.UserID, TenantID: tenantId },
+        include: [{ model: Class, attributes: ['ClassID', 'ClassName', 'Subject', 'Grade'] }]
+      }),
+      Payment.findAll({
+        where: { StudentID: studentId, TenantID: tenantId },
+        order: [['PaymentDate', 'DESC']]
+      }),
+      Attendance.findAll({
+        include: [{
+          model: EnrolledClass,
+          where: { UserID: student.UserID, TenantID: tenantId }
+        }]
+      })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        student: student,
+        enrolledClasses: enrolledClasses.map(ec => ({
+          enrolledclassID: ec.enrolledclassID,
+          ClassID: ec.ClassID,
+          ClassName: ec.class?.ClassName,
+          Subject: ec.class?.Subject,
+          Grade: ec.class?.Grade
+        })),
+        payments: payments,
+        attendance: attendance.map(a => ({
+          AttendanceID: a.AttendanceID,
+          Status: a.Status,
+          AttendanceDate: a.AttendanceDate,
+          AttendanceTime: a.AttendanceTime,
+          ClassID: a.enrolledclass?.ClassID
+        }))
+      }
+    });
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({ success: false, message: "Server error" });
