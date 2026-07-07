@@ -1,4 +1,6 @@
-const { db, User, Student, Parent, Tutor } = require("../Models");
+const { User, Student, Parent, Tutor, EnrolledClass} = require("../Models");
+const bcrypt = require("bcryptjs");
+const db     = require("../Config/db");
 
 //register student
 exports.registerStudent = async (req, res) => {
@@ -7,19 +9,32 @@ exports.registerStudent = async (req, res) => {
     lastName,
     gender,
     grade,
-    birthday,
+    dateOfBirth,
     address,
-    telephoneNumber,
+    phone,
     email,
     username,
     password,
+    classIds,
   } = req.body;
+
+  // ✅ Parse classIds (comes as JSON string from FormData)
+  const parsedClassIds = classIds ? (Array.isArray(classIds) ? classIds : JSON.parse(classIds)) : [];
+
+  const tenantId = req.user.tenantId;
 
   const transaction = await db.transaction();
 
   try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const user = await User.create(
-      { username, password, userrole: 'Student' },
+      {
+        username,
+        password: hashedPassword,
+        userrole: 'Student',
+        TenantID: tenantId
+      },
       { transaction }
     );
 
@@ -29,14 +44,26 @@ exports.registerStudent = async (req, res) => {
         LastName: lastName,
         Gender: gender,
         Grade: grade,
-        Birthday: birthday,
+        Birthday: dateOfBirth,
         Address: address,
-        TelNo: telephoneNumber,
+        TelNo: phone,
         Email: email,
         UserID: user.UserID,
+        TenantID: tenantId
       },
       { transaction }
     );
+
+    // ✅ Use parsedClassIds
+    if (parsedClassIds.length > 0) {
+      const enrolledClasses = parsedClassIds.map(classId => ({
+        UserID: user.UserID,
+        ClassID: classId,
+        TenantID: tenantId,
+      }));
+
+      await EnrolledClass.bulkCreate(enrolledClasses, { transaction });
+    }
 
     await transaction.commit();
 
@@ -89,7 +116,7 @@ exports.registerParent = async (req, res) => {
         {
           FirstName: firstName,
           LastName: lastName,
-          TelNo: telephoneNumber,
+          TelNo: phone,
           Email: email,
           NICNo: nicNumber,
           StudentNo: studentNumber,
@@ -116,46 +143,135 @@ exports.registerParent = async (req, res) => {
 //register tutor
 exports.registerTutor = async (req, res) => {
   const {
-    firstName,
-    lastName,
-    telephoneNumber,
-    email,
-    nicNumber,
-    subject,
-    gender,
-    address,
-    username,
-    password,
+    FirstName,
+    LastName,
+    NICNo,
+    Gender,
+    DOB,
+    TelNo,
+    Email,
+    Subject,
+    Address,
+    Username,
+    Password,
   } = req.body;
-
+ 
+  // From auth middleware — matches decoded JWT keys
+  const TenantID = req.user?.tenantId;
+ 
+  if (!TenantID) {
+    return res.status(401).json({
+      status: "error",
+      message: "Unauthorized: tenant not identified",
+    });
+  }
+ 
+  // Validate required fields
+  const missing = [];
+  if (!FirstName) missing.push("FirstName");
+  if (!LastName)  missing.push("LastName");
+  if (!NICNo)     missing.push("NICNo");
+  if (!Gender)    missing.push("Gender");
+  if (!TelNo)     missing.push("TelNo");
+  if (!Subject)   missing.push("Subject");
+  if (!Username)  missing.push("Username");
+  if (!Password)  missing.push("Password");
+ 
+  if (missing.length) {
+    return res.status(400).json({
+      status: "error",
+      message: `Missing required fields: ${missing.join(", ")}`,
+    });
+  }
+ 
+  if (Password.length < 6) {
+    return res.status(400).json({
+      status: "error",
+      message: "Password must be at least 6 characters",
+    });
+  }
+ 
   const transaction = await db.transaction();
-
+ 
   try {
+    // Check username unique within tenant
+    const existingUser = await User.findOne({
+      where: { username: Username, TenantID },
+      transaction,
+    });
+    if (existingUser) {
+      await transaction.rollback();
+      return res.status(409).json({
+        status: "error",
+        message: "Username already exists for this organisation",
+      });
+    }
+ 
+    // Check NIC unique within tenant
+    const existingTutor = await Tutor.findOne({
+      where: { NICNo, TenantID },
+      transaction,
+    });
+    if (existingTutor) {
+      await transaction.rollback();
+      return res.status(409).json({
+        status: "error",
+        message: "A tutor with this NIC number already exists",
+      });
+    }
+ 
+    // Hash password
+    const hashedPassword = await bcrypt.hash(Password, 10);
+ 
+    // Step 1: Create user row
     const user = await User.create(
-      { username, password, userrole: 'Tutor' },
-      { transaction }
-    );
-
-    await Tutor.create(
       {
-        FirstName: firstName,
-        LastName: lastName,
-        Gender: gender,
-        Address: address,
-        TelNo: telephoneNumber,
-        Email: email,
-        NICNo: nicNumber,
-        Subject: subject,
-        UserID: user.UserID,
+        username: Username,
+        password: hashedPassword,
+        userrole: "Tutor",
+        TenantID,
       },
       { transaction }
     );
-
+ 
+    // Step 2: Create tutor row linked to user
+    const tutor = await Tutor.create(
+      {
+        FirstName,
+        LastName,
+        NICNo,
+        Gender,
+        Birthday: DOB     || null,
+        TelNo,
+        Email:    Email   || null,
+        Subject,
+        Address:  Address || null,
+        UserID:   user.UserID,
+        TenantID,
+      },
+      { transaction }
+    );
+ 
     await transaction.commit();
-    res.status(200).send("Registration successful");
+ 
+    return res.status(201).json({
+      status:  "success",
+      message: "Tutor registered successfully",
+      data: {
+        tutorId:  tutor.TutorID,
+        userId:   user.UserID,
+        name:     `${FirstName} ${LastName}`,
+        username: Username,
+        subject:  Subject,
+      },
+    });
+ 
   } catch (err) {
     await transaction.rollback();
-    console.error("Error inserting tutor data:", err);
-    res.status(500).send("Error inserting tutor data");
+    console.error("Error registering tutor:", err);
+    return res.status(500).json({
+      status:  "error",
+      message: "Internal server error. Please try again.",
+    });
   }
 };

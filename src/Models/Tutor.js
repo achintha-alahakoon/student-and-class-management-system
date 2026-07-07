@@ -15,22 +15,25 @@ const Tutor = db.define('tutor', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+    NICNo: {
+    type: DataTypes.STRING,
+  },
   Gender: {
     type: DataTypes.STRING,
   },
+  Birthday: {
+    type: DataTypes.DATEONLY,
+  },
+    TelNo: {
+    type: DataTypes.STRING,
+  },
+    Email: {
+    type: DataTypes.STRING,
+  },
+    Subject: {
+    type: DataTypes.STRING,
+  },
   Address: {
-    type: DataTypes.STRING,
-  },
-  TelNo: {
-    type: DataTypes.STRING,
-  },
-  Email: {
-    type: DataTypes.STRING,
-  },
-  NICNo: {
-    type: DataTypes.STRING,
-  },
-  Subject: {
     type: DataTypes.STRING,
   },
   UserID: {

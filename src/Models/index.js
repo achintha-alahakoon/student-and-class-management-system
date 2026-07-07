@@ -79,9 +79,6 @@ UserMessageReadStatus.belongsTo(User, { foreignKey: 'userID' });
 Tutor.hasMany(Class, { foreignKey: 'TutorID' });
 Class.belongsTo(Tutor, { foreignKey: 'TutorID' });
 
-Tutor.hasMany(EnrolledClass, { foreignKey: 'TutorID' });
-EnrolledClass.belongsTo(Tutor, { foreignKey: 'TutorID' });
-
 // Class associations
 Class.hasMany(EnrolledClass, { foreignKey: 'ClassID' });
 EnrolledClass.belongsTo(Class, { foreignKey: 'ClassID' });
