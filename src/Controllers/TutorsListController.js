@@ -1,4 +1,4 @@
-const { Tutor, User } = require("../Models");
+const { Tutor, User, Class, Student, EnrolledClass } = require("../Models");
 
 exports.getAllTutors = async (req, res) => {
   const TenantID = req.user?.tenantId ?? req.TenantID;
@@ -53,20 +53,40 @@ exports.getAllTutors = async (req, res) => {
 // get tutor by id
 exports.getTutorById = async (req, res) => {
   const { id } = req.params;
-  const TenantID = req.user?.tenantId ?? req.TenantID;
+  const tenantId = req.user?.tenantId;
 
   try {
+    // Get tutor with user
     const tutor = await Tutor.findOne({
-      where: { TutorID: id, TenantID },
+      where: { TutorID: id, TenantID: tenantId },
       include: [{ model: User, attributes: ["isActive"] }],
     });
 
     if (!tutor) return res.status(404).json({ error: "Tutor not found" });
 
+    // Get classes taught by this tutor
+    const classes = await Class.findAll({
+      where: { TutorID: id, TenantID: tenantId },
+      attributes: ['ClassID', 'ClassName', 'Subject', 'Grade', 'isActive']
+    });
+
+    // Get enrolled students for these classes
+    const classIds = classes.map(c => c.ClassID);
+    const enrolledClasses = await EnrolledClass.findAll({
+      where: { ClassID: classIds, TenantID: tenantId }
+    });
+
+    // Count unique students across all classes
+    const uniqueUserIds = [...new Set(enrolledClasses.map(ec => ec.UserID))];
+    const totalStudents = uniqueUserIds.length;
+
     const result = {
       ...tutor.toJSON(),
       isActive: tutor.user?.isActive ?? true,
       user: undefined,
+      classes: classes,
+      classCount: classes.length,
+      totalStudents: totalStudents
     };
 
     return res.status(200).json({ status: "success", tutor: result });

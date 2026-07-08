@@ -69,8 +69,8 @@ Notification.belongsTo(Tenant, { foreignKey: 'TenantID' });
 Tenant.hasMany(ParentChild, { foreignKey: 'TenantID' });
 ParentChild.belongsTo(Tenant, { foreignKey: 'TenantID' });
 
-User.hasMany(EnrolledClass, { foreignKey: 'UserID' });
-EnrolledClass.belongsTo(User, { foreignKey: 'UserID' });
+Student.hasMany(EnrolledClass, { foreignKey: 'StudentID' });
+EnrolledClass.belongsTo(Student, { foreignKey: 'StudentID' });
 
 User.hasMany(UserMessageReadStatus, { foreignKey: 'userID' });
 UserMessageReadStatus.belongsTo(User, { foreignKey: 'userID' });

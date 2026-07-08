@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const db = require('../Config/db');
+const Student = require('./Student');
 
 const EnrolledClass = db.define('enrolledclass', {
   enrolledclassID: {
@@ -7,11 +8,13 @@ const EnrolledClass = db.define('enrolledclass', {
     primaryKey: true,
     autoIncrement: true,
   },
-  UserID: {
+  StudentID: {
     type: DataTypes.INTEGER,
+    allowNull: false,
   },
   ClassID: {
     type: DataTypes.INTEGER,
+    allowNull: false,
   },
   TenantID: {
     type: DataTypes.INTEGER,
