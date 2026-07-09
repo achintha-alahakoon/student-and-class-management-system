@@ -302,15 +302,15 @@ exports.getScheduledClassById = async (req, res) => {
     // Get enrolled students for this class
     const enrolledClasses = await EnrolledClass.findAll({
       where: {
-        ClassID: schedule.ClassID,
+        ClassID: schedule.class.ClassID,
         TenantID: tenantId,
       },
     });
 
-    // Get student details for enrolled users
-    const userIds = enrolledClasses.map((ec) => ec.UserID);
+    // Use StudentID — not UserID
+    const studentIds = enrolledClasses.map((ec) => ec.StudentID);
     const students = await Student.findAll({
-      where: { UserID: userIds, TenantID: tenantId },
+      where: { StudentID: studentIds, TenantID: tenantId },
       attributes: [
         "StudentID",
         "FirstName",
