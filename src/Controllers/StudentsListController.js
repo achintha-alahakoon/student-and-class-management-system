@@ -60,7 +60,7 @@ exports.getStudentById = async (req, res) => {
     // Fetch all related data in parallel
     const [enrolledClasses, payments, attendance] = await Promise.all([
       EnrolledClass.findAll({
-        where: { UserID: student.UserID, TenantID: tenantId },
+        where: { StudentID: studentId, TenantID: tenantId },
         include: [{ model: Class, attributes: ['ClassID', 'ClassName', 'Subject', 'Grade'] }]
       }),
       Payment.findAll({
@@ -70,7 +70,7 @@ exports.getStudentById = async (req, res) => {
       Attendance.findAll({
         include: [{
           model: EnrolledClass,
-          where: { UserID: student.UserID, TenantID: tenantId }
+          where: { StudentID: studentId, TenantID: tenantId }
         }]
       })
     ]);
@@ -157,13 +157,13 @@ exports.getTutorStudents = async (req, res) => {
 
       const enrolledClasses = await EnrolledClass.findAll({
         where: { TutorID: tutorID },
-        attributes: ['UserID']
+        attributes: ['StudentID']
       });
 
-      const userIDs = enrolledClasses.map(ec => ec.UserID);
+      const studentIds = enrolledClasses.map(ec => ec.StudentID);
 
       const students = await Student.findAll({
-        where: { UserID: userIDs },
+        where: { StudentID: studentIds },
         attributes: ['FirstName', 'LastName', 'Gender', 'Grade', 'StudentID']
       });
 
