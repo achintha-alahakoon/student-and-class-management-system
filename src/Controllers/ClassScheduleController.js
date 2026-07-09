@@ -165,14 +165,13 @@ exports.getScheduledClasses = async (req, res) => {
   }
 };
 
-// Get available students for a class
+// Get available students
 exports.getAvailableStudents = async (req, res) => {
-
   const { classId } = req.params;
   const TenantID = req.user?.tenantId ?? req.TenantID;
 
   try {
-    // ── Step 1: Get the class to find its grade ───────────
+    // Step 1: Get the class to find its grade
     const cls = await Class.findOne({
       where: { ClassID: classId, TenantID },
       attributes: ["ClassID", "Grade"],
@@ -182,36 +181,36 @@ exports.getAvailableStudents = async (req, res) => {
       return res.status(404).json({ error: "Class not found" });
     }
 
-    // ── Step 2: Get all students for this grade + tenant ──
+    // Step 2: Get all students for this grade
     const allStudents = await Student.findAll({
-      where: { Grade: cls.Grade, TenantID },
-      attributes: [
-        "StudentID",
-        "FirstName",
-        "LastName",
-        "Grade",
-        "Gender",
-        "UserID",
-      ],
+      where: {
+        Grade: cls.Grade,
+        TenantID,
+      },
+      attributes: ["StudentID", "FirstName", "LastName", "Grade", "Gender"],
     });
 
-    // ── Step 3: Get already enrolled UserIDs ─────────────
+    // Step 3: Get already enrolled StudentIDs
     const enrolledRecords = await EnrolledClass.findAll({
-      where: { ClassID: classId, TenantID },
-      attributes: ["UserID"],
+      where: {
+        ClassID: classId,
+        TenantID,
+      },
+      attributes: ["StudentID"],
     });
 
-    const enrolledUserIds = new Set(enrolledRecords.map((ec) => ec.UserID));
+    const enrolledStudentIds = new Set(
+      enrolledRecords.map((ec) => ec.StudentID),
+    );
 
-    // ── Step 4: Tag each student with isEnrolled ──────────
-    const result = allStudents.map((s) => ({
-      StudentID: s.StudentID,
-      FirstName: s.FirstName,
-      LastName: s.LastName,
-      Grade: s.Grade,
-      Gender: s.Gender,
-      UserID: s.UserID,
-      isEnrolled: enrolledUserIds.has(s.UserID),
+    // Step 4: Add isEnrolled flag
+    const result = allStudents.map((student) => ({
+      StudentID: student.StudentID,
+      FirstName: student.FirstName,
+      LastName: student.LastName,
+      Grade: student.Grade,
+      Gender: student.Gender,
+      isEnrolled: enrolledStudentIds.has(student.StudentID),
     }));
 
     return res.status(200).json({
@@ -230,29 +229,41 @@ exports.getAvailableStudents = async (req, res) => {
 // Assign student to class
 exports.assignStudentsToClass = async (req, res) => {
   const { classId } = req.params;
-  const { userIds } = req.body;  // ✅ Changed from studentIds to userIds
+  const { studentIds } = req.body;
   const tenantId = req.user?.tenantId;
 
   try {
-    await Promise.all(
-      userIds.map((userId) =>
-        EnrolledClass.create({
+    for (const studentId of studentIds) {
+      const existing = await EnrolledClass.findOne({
+        where: {
           ClassID: classId,
-          UserID: userId,
+          StudentID: studentId,
           TenantID: tenantId,
-        })
-      )
-    );
+        },
+      });
 
-    res.status(201).json({ message: "Students assigned to class successfully" });
+      if (!existing) {
+        await EnrolledClass.create({
+          ClassID: classId,
+          StudentID: studentId,
+          TenantID: tenantId,
+        });
+      }
+    }
+
+    res.status(201).json({
+      status: "success",
+      message: "Students assigned successfully",
+    });
   } catch (error) {
-    console.error("Error assigning students to class:", error);
+    console.error(error);
+
     res.status(500).json({
-      error: error.message || "Error assigning students to class",
+      status: "error",
+      message: error.message,
     });
   }
 };
-
 
 // Get scheduled class by ID
 exports.getScheduledClassById = async (req, res) => {
