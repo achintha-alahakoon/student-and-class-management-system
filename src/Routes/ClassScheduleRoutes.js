@@ -13,6 +13,7 @@ router.post("/assign-students/:classId", auth, ClassScheduleController.assignStu
 router.delete("/:ScheduleID", auth, ClassScheduleController.deleteScheduleClass);
 router.get("/getTutorScheduledClasses", auth, ClassScheduleController.getTutorScheduledClasses);
 router.get("/getParentStudentScheduledClasses", auth, ClassScheduleController.getParentStudentScheduledClasses);
+router.get("/getStudentSchedule", auth, ClassScheduleController.getStudentSchedule);
 
 
 module.exports = router;

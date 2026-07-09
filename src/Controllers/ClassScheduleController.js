@@ -378,16 +378,8 @@ exports.deleteScheduleClass = async (req, res) => {
 
 // get student schedule
 exports.getStudentSchedule = async (req, res) => {
-  let token = req.headers["authorization"];
-
-  if (!token) return res.status(403).json({ error: "No token provided" });
-  if (token.startsWith("Bearer ")) token = token.slice(7, token.length);
-
-  jwt.verify(token, "secret_key", async (err, decoded) => {
-    if (err)
-      return res.status(500).json({ error: "Failed to authenticate token" });
-
-    const userID = decoded.UserID;
+    const userID = req.user.userId;
+    const tenantId = req.user.tenantId;
 
     try {
       const enrolledClasses = await EnrolledClass.findAll({
@@ -421,24 +413,15 @@ exports.getStudentSchedule = async (req, res) => {
       console.error("Error fetching student schedule:", error);
       res.status(500).json({ error: "Error fetching student schedule" });
     }
-  });
 };
 
 // Get tutor scheduled classes
 exports.getTutorScheduledClasses = async (req, res) => {
-  let token = req.headers["authorization"];
-
-  if (!token) return res.status(403).json({ error: "No token provided" });
-  if (token.startsWith("Bearer ")) token = token.slice(7, token.length);
-
-  jwt.verify(token, "secret_key", async (err, decoded) => {
-    if (err)
-      return res.status(500).json({ error: "Failed to authenticate token" });
-
-    const userID = decoded.UserID;
+  const userID = req.user.userId;
+  const tenantId = req.user.tenantId;
 
     try {
-      const tutor = await Tutor.findOne({ where: { UserID: userID } });
+      const tutor = await Tutor.findOne({ where: { UserID: userID, TenantID: tenantId, } });
       if (!tutor)
         return res.status(500).json({ error: "Error fetching tutor details" });
 
@@ -473,21 +456,12 @@ exports.getTutorScheduledClasses = async (req, res) => {
       console.error("Error fetching scheduled classes:", error);
       res.status(500).json({ error: "Error fetching scheduled classes" });
     }
-  });
 };
 
 // get parent student scheduled classes
 exports.getParentStudentScheduledClasses = async (req, res) => {
-  let token = req.headers["authorization"];
-
-  if (!token) return res.status(403).json({ error: "No token provided" });
-  if (token.startsWith("Bearer ")) token = token.slice(7, token.length);
-
-  jwt.verify(token, "secret_key", async (err, decoded) => {
-    if (err)
-      return res.status(500).json({ error: "Failed to authenticate token" });
-
-    const userID = decoded.UserID;
+    const userID = req.user.userId;
+    const tenantId = req.user.tenantId;
 
     try {
       const parent = await Parent.findOne({ where: { UserID: userID } });
@@ -539,5 +513,4 @@ exports.getParentStudentScheduledClasses = async (req, res) => {
       console.error("Error fetching student schedule:", error);
       res.status(500).json({ error: "Error fetching student schedule" });
     }
-  });
 };
