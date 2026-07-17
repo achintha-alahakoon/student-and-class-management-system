@@ -103,23 +103,39 @@ exports.getStudentById = async (req, res) => {
 };
 
 //update student data
+// update student data
 exports.updateStudent = async (req, res) => {
-  const selectedUserId = req.params.selectedUserId;
-  const { firstName, lastName, gender, birthday, address, telephoneNumber, email } = req.body;
+  // If the parameter contains a colon (like ":1"), strip it out just in case
+  const selectedStudentId = req.params.selectedStudentId.replace(':', '');
+  
+  // Match the PascalCase keys coming from your Postman request body
+  const { FirstName, LastName, Gender, Birthday, Address, TelNo, Email } = req.body;
 
   try {
-    await Student.update(
+    // [rowsUpdated] will contain the number of rows that were actually updated
+    const [rowsUpdated] = await Student.update(
       {
-        FirstName: firstName,
-        LastName: lastName,
-        Gender: gender,
-        Birthday: birthday,
-        Address: address,
-        TelNo: telephoneNumber,
-        Email: email
+        FirstName: FirstName,
+        LastName: LastName,
+        Gender: Gender,
+        Birthday: Birthday,
+        Address: Address,
+        TelNo: TelNo,
+        Email: Email
       },
-      { where: { UserID: selectedUserId } }
+      { 
+        // Make sure this is 'StudentID' if you are querying the primary key
+        where: { StudentID: selectedStudentId } 
+      }
     );
+
+    if (rowsUpdated === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: `No student found with ID ${selectedStudentId} to update.` 
+      });
+    }
+
     res.json({ success: true, message: "Student updated successfully" });
   } catch (error) {
     console.error("Error updating student:", error);
