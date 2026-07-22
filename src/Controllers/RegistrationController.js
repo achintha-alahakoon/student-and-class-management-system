@@ -57,7 +57,7 @@ exports.registerStudent = async (req, res) => {
     // ✅ Use parsedClassIds
     if (parsedClassIds.length > 0) {
       const enrolledClasses = parsedClassIds.map(classId => ({
-        UserID: user.UserID,
+        StudentID: student.StudentID,
         ClassID: classId,
         TenantID: tenantId,
       }));
