@@ -4,7 +4,14 @@ const jwt = require("jsonwebtoken");
 //get all student data
 exports.getAllStudents = async (req, res) => {
   try {
-    const students = await Student.findAll();
+    const students = await Student.findAll({
+      include: [
+        {
+          model: User,
+          attributes: ['username']
+        }
+      ]
+    });
     res.json(students);
   } catch (error) {
     console.error("Error fetching students:", error);
@@ -102,24 +109,61 @@ exports.getStudentById = async (req, res) => {
   }
 };
 
-//update student data
+//update student data (including username/password)
 exports.updateStudent = async (req, res) => {
-  const selectedUserId = req.params.selectedUserId;
-  const { firstName, lastName, gender, birthday, address, telephoneNumber, email } = req.body;
+  // If the parameter contains a colon (like ":1"), strip it out just in case
+  const selectedStudentId = req.params.selectedStudentId.replace(':', '');
+  
+  // Match the camelCase keys coming from the frontend request body
+  const { firstName, lastName, grade, telephoneNumber, email, birthday, gender, address, username, password } = req.body;
 
   try {
+    const student = await Student.findByPk(selectedStudentId, {
+      attributes: ['StudentID', 'UserID']
+    });
+
+    if (!student) {
+      return res.status(404).json({ 
+        success: false, 
+        message: `No student found with ID ${selectedStudentId} to update.` 
+      });
+    }
+
+    // Update Student table
     await Student.update(
       {
         FirstName: firstName,
         LastName: lastName,
         Gender: gender,
+        Grade: grade,
         Birthday: birthday,
-        Address: address,
         TelNo: telephoneNumber,
-        Email: email
+        Email: email,
+        Address: address
       },
-      { where: { UserID: selectedUserId } }
+      { 
+        where: { StudentID: selectedStudentId } 
+      }
     );
+
+    // Update User table credentials if provided
+    if (username || password) {
+      const userUpdateData = {};
+      
+      if (username) {
+        userUpdateData.username = username;
+      }
+      
+      if (password) {
+        const bcrypt = require("bcryptjs");
+        userUpdateData.password = await bcrypt.hash(password, 10);
+      }
+
+      await User.update(userUpdateData, {
+        where: { UserID: student.UserID }
+      });
+    }
+
     res.json({ success: true, message: "Student updated successfully" });
   } catch (error) {
     console.error("Error updating student:", error);
